@@ -3,46 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>A-Frame Quest - Quiz 3D tipus Kahoot</title>
+    <title>Quiz 3D tipus Kahoot</title>
 
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://unpkg.com/aframe-troika-text/dist/aframe-troika-text.min.js"></script>
 
     <script>
-      /*
-        Estructura esperada del projecte:
-
-        /
-          index.html
-          data/
-            objects.json
-            obj01.json
-            obj02.json
-          assets/
-            models/
-              objecte1.glb
-              objecte2.glb
-
-        data/objects.json:
-        [
-          "obj01.json",
-          "obj02.json"
-        ]
-
-        Exemple data/obj01.json:
-        {
-          "id": "obj01",
-          "title": "Cub de prova",
-          "model": "assets/models/objecte1.glb",
-          "scale": [1, 1, 1],
-          "rotation": [0, 25, 0],
-          "description": "Observa la figura i respon.",
-          "question": "Quin format recomanat fem servir a A-Frame per models 3D?",
-          "answers": ["STL", "GLB/GLTF", "DOCX", "MP3"],
-          "correctIndex": 1,
-          "hint": "És un format pensat per web i temps real."
-        }
-      */
-
       AFRAME.registerComponent("clickable", {
         init: function () {
           this.el.classList.add("clickable");
@@ -50,33 +16,41 @@
       });
 
       window.addEventListener("load", () => {
+        const FONT_URL =
+          "https://cdn.jsdelivr.net/npm/@fontsource/inter/files/inter-latin-400-normal.woff";
+
         const assetsEl = document.querySelector("a-assets");
 
         const modelEl = document.querySelector("#modelEntity");
-        const modelTitleEl = document.querySelector("#modelTitle");
-
-        const quizTitleEl = document.querySelector("#quizTitle");
         const questionEl = document.querySelector("#questionText");
-        const descriptionEl = document.querySelector("#descriptionText");
+        const progressEl = document.querySelector("#progressText");
         const answersEl = document.querySelector("#answers");
         const hintPanelEl = document.querySelector("#hintPanel");
         const hintTextEl = document.querySelector("#hintText");
-        const progressEl = document.querySelector("#progressText");
         const feedbackPanelEl = document.querySelector("#feedbackPanel");
         const feedbackTextEl = document.querySelector("#feedbackText");
-
         const finalPanelEl = document.querySelector("#finalPanel");
         const finalTextEl = document.querySelector("#finalText");
+        const stageEl = document.querySelector("#mainStage");
+        const controlsEl = document.querySelector("#rotationControls");
 
         let objects = [];
         let currentIndex = 0;
-
         let startTimeMs = 0;
         let questionStartMs = 0;
         let totalWrong = 0;
         let totalAttempts = 0;
         let questionTimes = [];
         let locked = false;
+
+        function setTroika(el, value, extra = {}) {
+          const base = {
+            value: value,
+            color: "#ffffff",
+            font: FONT_URL
+          };
+          el.setAttribute("troika-text", Object.assign(base, extra));
+        }
 
         function addModelAsset(id, src) {
           const item = document.createElement("a-asset-item");
@@ -98,176 +72,72 @@
 
         function updateProgress() {
           const total = objects.length;
-          progressEl.setAttribute(
-            "value",
-            `Pregunta ${Math.min(currentIndex + 1, total)} / ${total}     Errades: ${totalWrong}`
+          setTroika(
+            progressEl,
+            `Pregunta ${Math.min(currentIndex + 1, total)} / ${total}    Errades: ${totalWrong}`,
+            {
+              align: "center",
+              anchor: "center",
+              fontSize: 0.085,
+              maxWidth: 4.0,
+              color: "#cfcfcf"
+            }
           );
         }
 
         function hideHint() {
           hintPanelEl.setAttribute("visible", "false");
-          hintTextEl.setAttribute("value", "");
+          setTroika(hintTextEl, "", {
+            align: "center",
+            anchor: "center",
+            fontSize: 0.085,
+            maxWidth: 4.0
+          });
         }
 
         function showHint(text) {
-          hintTextEl.setAttribute("value", text);
+          setTroika(hintTextEl, text, {
+            align: "center",
+            anchor: "center",
+            fontSize: 0.085,
+            maxWidth: 4.0,
+            color: "#ffefb0"
+          });
           hintPanelEl.setAttribute("visible", "true");
-        }
-
-        function showFeedback(text, color = "#74ff7a") {
-          feedbackTextEl.setAttribute("value", text);
-          feedbackTextEl.setAttribute("color", color);
-          feedbackPanelEl.setAttribute("visible", "true");
-
-          feedbackPanelEl.removeAttribute("animation__pop");
-          feedbackPanelEl.setAttribute(
-            "animation__pop",
-            "property: scale; from: 0.75 0.75 0.75; to: 1 1 1; dur: 250; easing: easeOutBack"
-          );
         }
 
         function hideFeedback() {
           feedbackPanelEl.setAttribute("visible", "false");
         }
 
-        function makeAnswerButton(text, index, x, y, color) {
-          const btn = document.createElement("a-plane");
-          btn.setAttribute("position", `${x} ${y} 0.04`);
-          btn.setAttribute("width", "1.95");
-          btn.setAttribute("height", "0.48");
-          btn.setAttribute("color", color);
-          btn.setAttribute("opacity", "0.96");
-          btn.setAttribute("clickable", "");
-          btn.classList.add("answer-button");
-
-          const label = document.createElement("a-text");
-          label.setAttribute("value", `${index + 1}. ${text}`);
-          label.setAttribute("align", "center");
-          label.setAttribute("baseline", "center");
-          label.setAttribute("width", "3.55");
-          label.setAttribute("wrap-count", "34");
-          label.setAttribute("color", "#ffffff");
-          label.setAttribute("position", "0 0 0.02");
-
-          btn.appendChild(label);
-
-          // Diversos events per fer-ho més robust a Quest Browser.
-          const handler = () => answer(index);
-          btn.addEventListener("click", handler);
-          btn.addEventListener("mouseup", handler);
-
-          return btn;
-        }
-
-        function createAnswers(obj) {
-          clearChildren(answersEl);
-
-          const answers = (obj.answers || []).slice(0, 4);
-
-          // 2x2 estil Kahoot, molt més gran.
-          const positions = [
-            { x: -1.05, y:  0.32, color: "#b71c1c" },
-            { x:  1.05, y:  0.32, color: "#0d47a1" },
-            { x: -1.05, y: -0.28, color: "#1b5e20" },
-            { x:  1.05, y: -0.28, color: "#e65100" }
-          ];
-
-          answers.forEach((txt, i) => {
-            const p = positions[i];
-            answersEl.appendChild(makeAnswerButton(txt, i, p.x, p.y, p.color));
+        function showFeedback(text, color = "#74ff7a") {
+          setTroika(feedbackTextEl, text, {
+            align: "center",
+            anchor: "center",
+            fontSize: 0.13,
+            maxWidth: 2.3,
+            color: color
           });
-        }
-
-        function calculateScore(totalTimeMs) {
-          const total = objects.length || 1;
-          const correct = total; // per arribar al final, totes s'han encertat almenys una vegada.
-          const avgQuestionTimeSec =
-            questionTimes.length > 0
-              ? questionTimes.reduce((a, b) => a + b, 0) / questionTimes.length / 1000
-              : 0;
-
-          // Puntuació senzilla:
-          // Base 100.
-          // -10 punts per errada.
-          // -1 punt per cada 20 segons totals.
-          // -petita penalització si el temps mitjà per pregunta és alt.
-          const errorPenalty = totalWrong * 10;
-          const totalTimePenalty = Math.floor(totalTimeMs / 20000);
-          const avgPenalty = Math.floor(avgQuestionTimeSec / 20);
-          const score = Math.max(0, Math.min(100, 100 - errorPenalty - totalTimePenalty - avgPenalty));
-
-          return {
-            score,
-            correct,
-            total,
-            totalWrong,
-            totalAttempts,
-            totalTimePenalty,
-            errorPenalty,
-            avgPenalty,
-            avgQuestionTimeSec
-          };
-        }
-
-        function finishQuiz() {
-          locked = true;
-
-          const totalTimeMs = Date.now() - startTimeMs;
-          const result = calculateScore(totalTimeMs);
-
-          document.querySelector("#mainStage").setAttribute("visible", "false");
-          finalPanelEl.setAttribute("visible", "true");
-
-          finalTextEl.setAttribute(
-            "value",
-            [
-              "ACTIVITAT COMPLETADA",
-              "",
-              `Puntuació: ${result.score} / 100`,
-              `Temps total: ${formatTime(totalTimeMs)}`,
-              `Encerts finals: ${result.correct} / ${result.total}`,
-              `Errades: ${result.totalWrong}`,
-              `Intents totals: ${result.totalAttempts}`,
-              "",
-              `Penalització errades: -${result.errorPenalty}`,
-              `Penalització temps: -${result.totalTimePenalty}`,
-              "",
-              "Recarrega la pàgina per tornar a començar."
-            ].join("\n")
+          feedbackPanelEl.setAttribute("visible", "true");
+          feedbackPanelEl.removeAttribute("animation__pop");
+          feedbackPanelEl.setAttribute(
+            "animation__pop",
+            "property: scale; from: 0.82 0.82 0.82; to: 1 1 1; dur: 250; easing: easeOutBack"
           );
         }
 
-        function loadQuestion(index) {
-          locked = false;
-          hideHint();
-          hideFeedback();
-
-          const obj = objects[index];
-          if (!obj) return;
-
-          modelEl.setAttribute("gltf-model", `#${obj.assetId}`);
-          modelEl.setAttribute("scale", (obj.scale || [1, 1, 1]).join(" "));
-          modelEl.setAttribute("rotation", (obj.rotation || [0, 0, 0]).join(" "));
-          modelEl.setAttribute("visible", "true");
-
-          // Reinicia animacions anteriors.
-          modelEl.removeAttribute("animation__correct");
-          modelEl.removeAttribute("animation__idle");
-          modelEl.setAttribute(
-            "animation__idle",
-            "property: rotation; dur: 16000; easing: linear; loop: true; to: 0 360 0"
-          );
-
-          modelTitleEl.setAttribute("value", obj.title || `Objecte ${index + 1}`);
-
-          quizTitleEl.setAttribute("value", obj.title || `Objecte ${index + 1}`);
-          descriptionEl.setAttribute("value", obj.description || "");
-          questionEl.setAttribute("value", obj.question || "");
-
-          createAnswers(obj);
-          updateProgress();
-
-          questionStartMs = Date.now();
+        function createTextOnButton(btn, text, fontSize = 0.1) {
+          const textEl = document.createElement("a-entity");
+          textEl.setAttribute("position", "0 0 0.03");
+          setTroika(textEl, text, {
+            align: "center",
+            anchor: "center",
+            fontSize: fontSize,
+            maxWidth: 1.65,
+            lineHeight: 1.1,
+            color: "#ffffff"
+          });
+          btn.appendChild(textEl);
         }
 
         function answer(selectedIndex) {
@@ -285,16 +155,17 @@
             const elapsedThisQuestion = Date.now() - questionStartMs;
             questionTimes.push(elapsedThisQuestion);
 
-            showFeedback("✓ CORRECTE!", "#74ff7a");
             hideHint();
+            showFeedback("✓ RESPOSTA CORRECTA", "#74ff7a");
 
             modelEl.removeAttribute("animation__idle");
             const currentRot = modelEl.getAttribute("rotation");
             modelEl.setAttribute(
               "animation__correct",
-              `property: rotation; from: ${currentRot.x} ${currentRot.y} ${currentRot.z}; to: ${currentRot.x} ${currentRot.y + 360} ${currentRot.z}; dur: 950; easing: easeOutQuad`
+              `property: rotation; from: ${currentRot.x} ${currentRot.y} ${currentRot.z}; to: ${currentRot.x} ${currentRot.y + 360} ${currentRot.z}; dur: 1100; easing: easeOutQuad`
             );
 
+            // Missatge visible més temps.
             setTimeout(() => {
               currentIndex += 1;
 
@@ -303,22 +174,58 @@
               } else {
                 loadQuestion(currentIndex);
               }
-            }, 1250);
+            }, 2200);
           } else {
             totalWrong += 1;
             updateProgress();
+            showFeedback("✕ RESPOSTA INCORRECTA", "#ffb3b3");
 
             const hint = obj.hint
               ? `Pista: ${obj.hint}`
-              : "Pista: observa bé la figura i torna-ho a provar.";
+              : "Pista: observa millor la figura i torna-ho a provar.";
 
             showHint(hint);
-            showFeedback("✕ RESPOSTA INCORRECTA", "#ffb3b3");
 
             setTimeout(() => {
               if (!locked) hideFeedback();
-            }, 900);
+            }, 1300);
           }
+        }
+
+        function makeAnswerButton(text, index, x, y, color) {
+          const btn = document.createElement("a-plane");
+          btn.setAttribute("position", `${x} ${y} 0.05`);
+          btn.setAttribute("width", "1.95");
+          btn.setAttribute("height", "0.52");
+          btn.setAttribute("color", color);
+          btn.setAttribute("opacity", "0.97");
+          btn.setAttribute("clickable", "");
+          btn.classList.add("answer-button");
+
+          createTextOnButton(btn, `${index + 1}. ${text}`, 0.11);
+
+          const handler = () => answer(index);
+          btn.addEventListener("click", handler);
+          btn.addEventListener("mouseup", handler);
+
+          return btn;
+        }
+
+        function createAnswers(obj) {
+          clearChildren(answersEl);
+
+          const answers = (obj.answers || []).slice(0, 4);
+          const positions = [
+            { x: -1.05, y:  0.30, color: "#c62828" },
+            { x:  1.05, y:  0.30, color: "#1565c0" },
+            { x: -1.05, y: -0.30, color: "#2e7d32" },
+            { x:  1.05, y: -0.30, color: "#ef6c00" }
+          ];
+
+          answers.forEach((txt, i) => {
+            const p = positions[i];
+            answersEl.appendChild(makeAnswerButton(txt, i, p.x, p.y, p.color));
+          });
         }
 
         function rotateObject(axis, amount) {
@@ -330,25 +237,16 @@
           modelEl.setAttribute("rotation", `${next.x} ${next.y} ${next.z}`);
         }
 
-        function makeControlButton(text, x, y, axis, amount) {
+        function makeControlButton(text, x, axis, amount) {
           const btn = document.createElement("a-plane");
-          btn.setAttribute("position", `${x} ${y} 0.04`);
-          btn.setAttribute("width", "0.88");
-          btn.setAttribute("height", "0.28");
+          btn.setAttribute("position", `${x} 0 0.04`);
+          btn.setAttribute("width", "0.95");
+          btn.setAttribute("height", "0.26");
           btn.setAttribute("color", "#263238");
-          btn.setAttribute("opacity", "0.96");
+          btn.setAttribute("opacity", "0.97");
           btn.setAttribute("clickable", "");
 
-          const label = document.createElement("a-text");
-          label.setAttribute("value", text);
-          label.setAttribute("align", "center");
-          label.setAttribute("baseline", "center");
-          label.setAttribute("width", "1.65");
-          label.setAttribute("wrap-count", "18");
-          label.setAttribute("color", "#ffffff");
-          label.setAttribute("position", "0 0 0.02");
-
-          btn.appendChild(label);
+          createTextOnButton(btn, text, 0.085);
 
           const handler = () => rotateObject(axis, amount);
           btn.addEventListener("click", handler);
@@ -358,13 +256,101 @@
         }
 
         function createRotationControls() {
-          const controls = document.querySelector("#rotationControls");
-          clearChildren(controls);
+          clearChildren(controlsEl);
+          controlsEl.appendChild(makeControlButton("⟲ esquerra", -1.55, "y", 25));
+          controlsEl.appendChild(makeControlButton("dreta ⟳", -0.50, "y", -25));
+          controlsEl.appendChild(makeControlButton("amunt", 0.55, "x", 20));
+          controlsEl.appendChild(makeControlButton("avall", 1.60, "x", -20));
+        }
 
-          controls.appendChild(makeControlButton("⟲ esquerra", -0.98, 0, "y", 25));
-          controls.appendChild(makeControlButton("dreta ⟳", -0.03, 0, "y", -25));
-          controls.appendChild(makeControlButton("amunt", 0.92, 0, "x", 20));
-          controls.appendChild(makeControlButton("avall", 1.87, 0, "x", -20));
+        function calculateScore(totalTimeMs) {
+          const totalQuestions = objects.length || 1;
+          const correct = totalQuestions; // per acabar-les totes les ha encertat
+          const errorPenalty = totalWrong * 10;
+          const timePenalty = Math.floor(totalTimeMs / 20000); // 1 punt cada 20 s
+          const score = Math.max(0, Math.min(100, 100 - errorPenalty - timePenalty));
+
+          return {
+            score,
+            correct,
+            totalQuestions,
+            errorPenalty,
+            timePenalty
+          };
+        }
+
+        function finishQuiz() {
+          locked = true;
+          const totalTimeMs = Date.now() - startTimeMs;
+          const result = calculateScore(totalTimeMs);
+
+          stageEl.setAttribute("visible", "false");
+          finalPanelEl.setAttribute("visible", "true");
+
+          setTroika(
+            finalTextEl,
+            [
+              "ACTIVITAT COMPLETADA",
+              "",
+              `Puntuació: ${result.score} / 100`,
+              `Temps total: ${formatTime(totalTimeMs)}`,
+              `Encerts: ${result.correct} / ${result.totalQuestions}`,
+              `Errades: ${totalWrong}`,
+              `Intents totals: ${totalAttempts}`,
+              "",
+              `Penalització per errades: -${result.errorPenalty}`,
+              `Penalització per temps: -${result.timePenalty}`,
+              "",
+              "Recarrega la pàgina per tornar a començar."
+            ].join("\n"),
+            {
+              align: "center",
+              anchor: "center",
+              fontSize: 0.11,
+              maxWidth: 3.9,
+              lineHeight: 1.2,
+              color: "#ffffff"
+            }
+          );
+        }
+
+        function loadQuestion(index) {
+          locked = false;
+          hideHint();
+          hideFeedback();
+
+          const obj = objects[index];
+          if (!obj) return;
+
+          modelEl.setAttribute("gltf-model", `#${obj.assetId}`);
+          modelEl.setAttribute("scale", (obj.scale || [1, 1, 1]).join(" "));
+          modelEl.setAttribute("rotation", (obj.rotation || [0, 0, 0]).join(" "));
+          modelEl.setAttribute("visible", "true");
+
+          modelEl.removeAttribute("animation__correct");
+          modelEl.removeAttribute("animation__idle");
+          modelEl.setAttribute(
+            "animation__idle",
+            "property: rotation; dur: 18000; easing: linear; loop: true; to: 0 360 0"
+          );
+
+          // Sense títol ni descripció, només la pregunta.
+          setTroika(
+            questionEl,
+            obj.question || "",
+            {
+              align: "center",
+              anchor: "center",
+              fontSize: 0.125,
+              maxWidth: 4.0,
+              lineHeight: 1.15,
+              color: "#ffffff"
+            }
+          );
+
+          createAnswers(obj);
+          updateProgress();
+          questionStartMs = Date.now();
         }
 
         async function loadData() {
@@ -372,8 +358,8 @@
           if (!listResp.ok) throw new Error("No puc llegir data/objects.json");
 
           const fileList = await listResp.json();
-
           const loaded = [];
+
           for (const file of fileList) {
             const resp = await fetch(`data/${file}`);
             if (!resp.ok) throw new Error(`No puc llegir data/${file}`);
@@ -382,11 +368,9 @@
 
           objects = loaded.map((o, i) => ({
             id: o.id ?? `obj${String(i + 1).padStart(2, "0")}`,
-            title: o.title ?? `Objecte ${i + 1}`,
             model: o.model,
             rotation: o.rotation ?? [0, 0, 0],
             scale: o.scale ?? [1, 1, 1],
-            description: o.description ?? "",
             question: o.question ?? "",
             answers: o.answers ?? [],
             correctIndex: o.correctIndex ?? 0,
@@ -409,8 +393,18 @@
 
         loadData().catch((err) => {
           console.error(err);
-          hintTextEl.setAttribute("value", "Error carregant dades. Revisa data/objects.json i els fitxers objXX.json.");
-          hintPanelEl.setAttribute("visible", "true");
+          finalPanelEl.setAttribute("visible", "true");
+          setTroika(
+            finalTextEl,
+            "Error carregant dades.\nRevisa data/objects.json i els fitxers objXX.json.",
+            {
+              align: "center",
+              anchor: "center",
+              fontSize: 0.12,
+              maxWidth: 3.9,
+              color: "#ffffff"
+            }
+          );
         });
       });
     </script>
@@ -420,138 +414,64 @@
     <a-scene background="color: #111111">
       <a-assets></a-assets>
 
-      <!-- Llum -->
-      <a-entity light="type: ambient; intensity: 0.85"></a-entity>
-      <a-entity light="type: directional; intensity: 0.9" position="0 4 2"></a-entity>
+      <a-entity light="type: ambient; intensity: 0.9"></a-entity>
+      <a-entity light="type: directional; intensity: 1.0" position="0 4 2"></a-entity>
 
-      <!-- Escenari principal: només hi ha UNA figura i UNA interfície gran -->
-      <a-entity id="mainStage" position="0 0 -3.2">
+      <!-- Escenari principal -->
+      <a-entity id="mainStage" position="0 0 -4.1">
 
-        <!-- Objecte 3D únic, reutilitzat per a cada pregunta -->
-        <a-entity id="modelArea" position="0 1.55 0">
+        <!-- Objecte més amunt i sense títol -->
+        <a-entity id="modelArea" position="0 2.25 0">
           <a-entity id="modelEntity" visible="false" position="0 0 0"></a-entity>
 
-          <a-text
-            id="modelTitle"
-            value=""
-            position="0 1.35 0.02"
-            width="4.2"
-            align="center"
-            color="#ffd54a"
-            side="double"
-          ></a-text>
-
           <a-torus
-            position="0 -0.72 0"
+            position="0 -0.88 0"
             rotation="90 0 0"
-            radius="0.95"
+            radius="0.98"
             radius-tubular="0.012"
             color="#ffd54a"
             animation__pulse="property: scale; from: 1 1 1; to: 1.08 1.08 1.08; dir: alternate; dur: 800; loop: true; easing: easeInOutSine"
           ></a-torus>
         </a-entity>
 
-        <!-- Controls de gir: molt separats del quiz -->
-        <a-entity id="rotationBar" position="-0.45 0.32 0.02">
-          <a-plane width="4.05" height="0.42" color="#000000" opacity="0.55"></a-plane>
+        <!-- Barra de controls per girar l'objecte -->
+        <a-entity id="rotationBar" position="0 0.85 0.02">
+          <a-plane width="4.4" height="0.38" color="#000000" opacity="0.55"></a-plane>
           <a-entity id="rotationControls" position="0 0 0.03"></a-entity>
         </a-entity>
 
-        <!-- Panell de pregunta, gran i tipus Kahoot -->
-        <a-entity id="quizPanel" position="0 -0.48 0">
-          <a-plane width="4.45" height="2.35" color="#000000" opacity="0.88"></a-plane>
+        <!-- Panell principal estil Kahoot -->
+        <a-entity id="quizPanel" position="0 -0.50 0">
+          <a-plane width="4.55" height="2.55" color="#000000" opacity="0.90"></a-plane>
 
-          <a-text
-            id="progressText"
-            value=""
-            position="0 1.02 0.03"
-            width="4.2"
-            align="center"
-            color="#cccccc"
-          ></a-text>
+          <a-entity id="progressText" position="0 1.03 0.03"></a-entity>
+          <a-entity id="questionText" position="0 0.63 0.03"></a-entity>
 
-          <a-text
-            id="quizTitle"
-            value=""
-            position="0 0.78 0.03"
-            width="4.1"
-            align="center"
-            color="#ffd54a"
-          ></a-text>
-
-          <a-text
-            id="descriptionText"
-            value=""
-            position="0 0.55 0.03"
-            width="4.1"
-            wrap-count="60"
-            align="center"
-            color="#ffffff"
-          ></a-text>
-
-          <a-text
-            id="questionText"
-            value=""
-            position="0 0.25 0.03"
-            width="4.1"
-            wrap-count="52"
-            align="center"
-            color="#ffffff"
-          ></a-text>
-
-          <!-- Botons grans 2x2 -->
-          <a-entity id="answers" position="0 -0.40 0.03"></a-entity>
+          <a-entity id="answers" position="0 -0.25 0.03"></a-entity>
         </a-entity>
 
-        <!-- Pistes separades dels botons -->
-        <a-entity id="hintPanel" position="0 -1.86 0" visible="false">
-          <a-plane width="4.45" height="0.42" color="#3a2200" opacity="0.94"></a-plane>
-          <a-text
-            id="hintText"
-            value=""
-            position="0 0 0.03"
-            width="4.15"
-            wrap-count="65"
-            align="center"
-            baseline="center"
-            color="#ffecb3"
-          ></a-text>
+        <!-- Pista separada -->
+        <a-entity id="hintPanel" position="0 -2.10 0" visible="false">
+          <a-plane width="4.55" height="0.45" color="#3a2200" opacity="0.95"></a-plane>
+          <a-entity id="hintText" position="0 0 0.03"></a-entity>
         </a-entity>
 
-        <!-- Feedback separat i gran -->
-        <a-entity id="feedbackPanel" position="0 2.55 0.05" visible="false">
-          <a-plane width="2.4" height="0.55" color="#000000" opacity="0.78"></a-plane>
-          <a-text
-            id="feedbackText"
-            value=""
-            position="0 0 0.04"
-            width="2.2"
-            align="center"
-            baseline="center"
-            color="#ffffff"
-          ></a-text>
+        <!-- Missatge de feedback separat -->
+        <a-entity id="feedbackPanel" position="0 2.75 0.05" visible="false">
+          <a-plane width="2.9" height="0.58" color="#000000" opacity="0.82"></a-plane>
+          <a-entity id="feedbackText" position="0 0 0.04"></a-entity>
         </a-entity>
       </a-entity>
 
       <!-- Panell final -->
-      <a-entity id="finalPanel" position="0 1.35 -3.0" visible="false">
-        <a-plane width="4.3" height="2.6" color="#000000" opacity="0.92"></a-plane>
-        <a-text
-          id="finalText"
-          value=""
-          position="0 0.20 0.04"
-          width="3.9"
-          wrap-count="58"
-          align="center"
-          color="#ffffff"
-        ></a-text>
+      <a-entity id="finalPanel" position="0 1.35 -3.5" visible="false">
+        <a-plane width="4.3" height="2.8" color="#000000" opacity="0.93"></a-plane>
+        <a-entity id="finalText" position="0 0.15 0.04"></a-entity>
       </a-entity>
 
-      <!-- Càmera i controladors -->
+      <!-- Càmera i controls -->
       <a-entity id="rig" position="0 0 0">
         <a-entity id="cam" camera position="0 1.6 0">
-          <!-- Cursor de mirada de suport: útil si el trigger dels comandaments falla.
-               Mira un botó i prem/clica segons el navegador. -->
           <a-cursor
             id="gazeCursor"
             raycaster="objects: .clickable"
