@@ -21,6 +21,9 @@
 
         const assetsEl = document.querySelector("a-assets");
 
+        const loadingPanelEl = document.querySelector("#loadingPanel");
+        const loadingTextEl = document.querySelector("#loadingText");
+
         const modelEl = document.querySelector("#modelEntity");
         const questionEl = document.querySelector("#questionText");
         const progressEl = document.querySelector("#progressText");
@@ -32,7 +35,6 @@
         const finalPanelEl = document.querySelector("#finalPanel");
         const finalTextEl = document.querySelector("#finalText");
         const stageEl = document.querySelector("#mainStage");
-        const controlsEl = document.querySelector("#rotationControls");
 
         let objects = [];
         let currentIndex = 0;
@@ -52,11 +54,19 @@
           el.setAttribute("troika-text", Object.assign(base, extra));
         }
 
-        function addModelAsset(id, src) {
-          const item = document.createElement("a-asset-item");
-          item.setAttribute("id", id);
-          item.setAttribute("src", src);
-          assetsEl.appendChild(item);
+        function setLoadingText(value) {
+          setTroika(
+            loadingTextEl,
+            value,
+            {
+              align: "center",
+              anchor: "center",
+              fontSize: 0.13,
+              maxWidth: 3.8,
+              lineHeight: 1.2,
+              color: "#ffffff"
+            }
+          );
         }
 
         function clearChildren(el) {
@@ -140,58 +150,6 @@
           btn.appendChild(textEl);
         }
 
-        function answer(selectedIndex) {
-          if (locked) return;
-
-          const obj = objects[currentIndex];
-          if (!obj) return;
-
-          const correctIndex = Number(obj.correctIndex ?? 0);
-          totalAttempts += 1;
-
-          if (selectedIndex === correctIndex) {
-            locked = true;
-
-            const elapsedThisQuestion = Date.now() - questionStartMs;
-            questionTimes.push(elapsedThisQuestion);
-
-            hideHint();
-            showFeedback("✓ RESPOSTA CORRECTA", "#74ff7a");
-
-            modelEl.removeAttribute("animation__idle");
-            const currentRot = modelEl.getAttribute("rotation");
-            modelEl.setAttribute(
-              "animation__correct",
-              `property: rotation; from: ${currentRot.x} ${currentRot.y} ${currentRot.z}; to: ${currentRot.x} ${currentRot.y + 360} ${currentRot.z}; dur: 1100; easing: easeOutQuad`
-            );
-
-            // Missatge visible més temps.
-            setTimeout(() => {
-              currentIndex += 1;
-
-              if (currentIndex >= objects.length) {
-                finishQuiz();
-              } else {
-                loadQuestion(currentIndex);
-              }
-            }, 2200);
-          } else {
-            totalWrong += 1;
-            updateProgress();
-            showFeedback("✕ RESPOSTA INCORRECTA", "#ffb3b3");
-
-            const hint = obj.hint
-              ? `Pista: ${obj.hint}`
-              : "Pista: observa millor la figura i torna-ho a provar.";
-
-            showHint(hint);
-
-            setTimeout(() => {
-              if (!locked) hideFeedback();
-            }, 1300);
-          }
-        }
-
         function makeAnswerButton(text, index, x, y, color) {
           const btn = document.createElement("a-plane");
           btn.setAttribute("position", `${x} ${y} 0.05`);
@@ -202,7 +160,7 @@
           btn.setAttribute("clickable", "");
           btn.classList.add("answer-button");
 
-          createTextOnButton(btn, `${index + 1}. ${text}`, 0.11);
+          createTextOnButton(btn, `${index + 1}. ${text}`, 0.105);
 
           const handler = () => answer(index);
           btn.addEventListener("click", handler);
@@ -228,46 +186,50 @@
           });
         }
 
-        function rotateObject(axis, amount) {
-          const r = modelEl.getAttribute("rotation");
-          const next = { x: r.x, y: r.y, z: r.z };
-          next[axis] += amount;
+        function preloadAsset(id, src, index, total) {
+          return new Promise((resolve) => {
+            const item = document.createElement("a-asset-item");
+            item.setAttribute("id", id);
+            item.setAttribute("src", src);
 
-          modelEl.removeAttribute("animation__idle");
-          modelEl.setAttribute("rotation", `${next.x} ${next.y} ${next.z}`);
+            let resolved = false;
+
+            const finish = () => {
+              if (resolved) return;
+              resolved = true;
+              setLoadingText(`Carregant models 3D...\n${index + 1} / ${total}`);
+              resolve();
+            };
+
+            item.addEventListener("loaded", finish);
+            item.addEventListener("error", () => {
+              console.warn("No s'ha pogut carregar el model:", src);
+              finish();
+            });
+
+            assetsEl.appendChild(item);
+
+            // Fallback: si algun navegador no dispara l'event loaded però el model ja està a la memòria cau.
+            setTimeout(finish, 8000);
+          });
         }
 
-        function makeControlButton(text, x, axis, amount) {
-          const btn = document.createElement("a-plane");
-          btn.setAttribute("position", `${x} 0 0.04`);
-          btn.setAttribute("width", "0.95");
-          btn.setAttribute("height", "0.26");
-          btn.setAttribute("color", "#263238");
-          btn.setAttribute("opacity", "0.97");
-          btn.setAttribute("clickable", "");
+        async function preloadAllModels() {
+          setLoadingText("Carregant models 3D...\n0 / " + objects.length);
 
-          createTextOnButton(btn, text, 0.085);
+          for (let i = 0; i < objects.length; i++) {
+            await preloadAsset(objects[i].assetId, objects[i].model, i, objects.length);
+          }
 
-          const handler = () => rotateObject(axis, amount);
-          btn.addEventListener("click", handler);
-          btn.addEventListener("mouseup", handler);
-
-          return btn;
-        }
-
-        function createRotationControls() {
-          clearChildren(controlsEl);
-          controlsEl.appendChild(makeControlButton("⟲ esquerra", -1.55, "y", 25));
-          controlsEl.appendChild(makeControlButton("dreta ⟳", -0.50, "y", -25));
-          controlsEl.appendChild(makeControlButton("amunt", 0.55, "x", 20));
-          controlsEl.appendChild(makeControlButton("avall", 1.60, "x", -20));
+          setLoadingText("Models carregats.\nComencem!");
+          await new Promise((resolve) => setTimeout(resolve, 700));
         }
 
         function calculateScore(totalTimeMs) {
           const totalQuestions = objects.length || 1;
-          const correct = totalQuestions; // per acabar-les totes les ha encertat
+          const correct = totalQuestions;
           const errorPenalty = totalWrong * 10;
-          const timePenalty = Math.floor(totalTimeMs / 20000); // 1 punt cada 20 s
+          const timePenalty = Math.floor(totalTimeMs / 20000);
           const score = Math.max(0, Math.min(100, 100 - errorPenalty - timePenalty));
 
           return {
@@ -314,6 +276,57 @@
           );
         }
 
+        function answer(selectedIndex) {
+          if (locked) return;
+
+          const obj = objects[currentIndex];
+          if (!obj) return;
+
+          const correctIndex = Number(obj.correctIndex ?? 0);
+          totalAttempts += 1;
+
+          if (selectedIndex === correctIndex) {
+            locked = true;
+
+            const elapsedThisQuestion = Date.now() - questionStartMs;
+            questionTimes.push(elapsedThisQuestion);
+
+            hideHint();
+            showFeedback("✓ RESPOSTA CORRECTA", "#74ff7a");
+
+            modelEl.removeAttribute("animation__idle");
+            const currentRot = modelEl.getAttribute("rotation");
+            modelEl.setAttribute(
+              "animation__correct",
+              `property: rotation; from: ${currentRot.x} ${currentRot.y} ${currentRot.z}; to: ${currentRot.x} ${currentRot.y + 360} ${currentRot.z}; dur: 1100; easing: easeOutQuad`
+            );
+
+            setTimeout(() => {
+              currentIndex += 1;
+
+              if (currentIndex >= objects.length) {
+                finishQuiz();
+              } else {
+                loadQuestion(currentIndex);
+              }
+            }, 2200);
+          } else {
+            totalWrong += 1;
+            updateProgress();
+            showFeedback("✕ RESPOSTA INCORRECTA", "#ffb3b3");
+
+            const hint = obj.hint
+              ? `Pista: ${obj.hint}`
+              : "Pista: observa millor la figura i torna-ho a provar.";
+
+            showHint(hint);
+
+            setTimeout(() => {
+              if (!locked) hideFeedback();
+            }, 1300);
+          }
+        }
+
         function loadQuestion(index) {
           locked = false;
           hideHint();
@@ -322,8 +335,13 @@
           const obj = objects[index];
           if (!obj) return;
 
+          // El model es mostra una mica més gran multiplicant l'escala original.
+          const originalScale = obj.scale || [1, 1, 1];
+          const scaleFactor = 1.25;
+          const finalScale = originalScale.map((v) => v * scaleFactor);
+
           modelEl.setAttribute("gltf-model", `#${obj.assetId}`);
-          modelEl.setAttribute("scale", (obj.scale || [1, 1, 1]).join(" "));
+          modelEl.setAttribute("scale", finalScale.join(" "));
           modelEl.setAttribute("rotation", (obj.rotation || [0, 0, 0]).join(" "));
           modelEl.setAttribute("visible", "true");
 
@@ -334,7 +352,6 @@
             "property: rotation; dur: 18000; easing: linear; loop: true; to: 0 360 0"
           );
 
-          // Sense títol ni descripció, només la pregunta.
           setTroika(
             questionEl,
             obj.question || "",
@@ -354,6 +371,11 @@
         }
 
         async function loadData() {
+          stageEl.setAttribute("visible", "false");
+          finalPanelEl.setAttribute("visible", "false");
+          loadingPanelEl.setAttribute("visible", "true");
+          setLoadingText("Preparant l'activitat...");
+
           const listResp = await fetch("data/objects.json");
           if (!listResp.ok) throw new Error("No puc llegir data/objects.json");
 
@@ -378,9 +400,10 @@
             assetId: `asset_${i}`
           }));
 
-          objects.forEach((obj) => addModelAsset(obj.assetId, obj.model));
+          await preloadAllModels();
 
-          createRotationControls();
+          loadingPanelEl.setAttribute("visible", "false");
+          stageEl.setAttribute("visible", "true");
 
           startTimeMs = Date.now();
           currentIndex = 0;
@@ -393,6 +416,7 @@
 
         loadData().catch((err) => {
           console.error(err);
+          loadingPanelEl.setAttribute("visible", "false");
           finalPanelEl.setAttribute("visible", "true");
           setTroika(
             finalTextEl,
@@ -412,36 +436,36 @@
 
   <body>
     <a-scene background="color: #111111">
-      <a-assets></a-assets>
+      <a-assets timeout="30000"></a-assets>
 
       <a-entity light="type: ambient; intensity: 0.9"></a-entity>
       <a-entity light="type: directional; intensity: 1.0" position="0 4 2"></a-entity>
 
-      <!-- Escenari principal -->
-      <a-entity id="mainStage" position="0 0 -4.1">
+      <!-- Pantalla inicial de precàrrega -->
+      <a-entity id="loadingPanel" position="0 1.45 -3.5" visible="true">
+        <a-plane width="4.2" height="1.5" color="#000000" opacity="0.92"></a-plane>
+        <a-entity id="loadingText" position="0 0 0.04"></a-entity>
+      </a-entity>
 
-        <!-- Objecte més amunt i sense títol -->
-        <a-entity id="modelArea" position="0 2.25 0">
+      <!-- Escenari principal -->
+      <a-entity id="mainStage" position="0 0 -4.1" visible="false">
+
+        <!-- Objecte més amunt i més gran -->
+        <a-entity id="modelArea" position="0 2.70 0">
           <a-entity id="modelEntity" visible="false" position="0 0 0"></a-entity>
 
           <a-torus
-            position="0 -0.88 0"
+            position="0 -0.95 0"
             rotation="90 0 0"
-            radius="0.98"
+            radius="1.10"
             radius-tubular="0.012"
             color="#ffd54a"
             animation__pulse="property: scale; from: 1 1 1; to: 1.08 1.08 1.08; dir: alternate; dur: 800; loop: true; easing: easeInOutSine"
           ></a-torus>
         </a-entity>
 
-        <!-- Barra de controls per girar l'objecte -->
-        <a-entity id="rotationBar" position="0 0.85 0.02">
-          <a-plane width="4.4" height="0.38" color="#000000" opacity="0.55"></a-plane>
-          <a-entity id="rotationControls" position="0 0 0.03"></a-entity>
-        </a-entity>
-
         <!-- Panell principal estil Kahoot -->
-        <a-entity id="quizPanel" position="0 -0.50 0">
+        <a-entity id="quizPanel" position="0 -0.45 0">
           <a-plane width="4.55" height="2.55" color="#000000" opacity="0.90"></a-plane>
 
           <a-entity id="progressText" position="0 1.03 0.03"></a-entity>
@@ -451,13 +475,13 @@
         </a-entity>
 
         <!-- Pista separada -->
-        <a-entity id="hintPanel" position="0 -2.10 0" visible="false">
+        <a-entity id="hintPanel" position="0 -2.05 0" visible="false">
           <a-plane width="4.55" height="0.45" color="#3a2200" opacity="0.95"></a-plane>
           <a-entity id="hintText" position="0 0 0.03"></a-entity>
         </a-entity>
 
         <!-- Missatge de feedback separat -->
-        <a-entity id="feedbackPanel" position="0 2.75 0.05" visible="false">
+        <a-entity id="feedbackPanel" position="0 2.95 0.05" visible="false">
           <a-plane width="2.9" height="0.58" color="#000000" opacity="0.82"></a-plane>
           <a-entity id="feedbackText" position="0 0 0.04"></a-entity>
         </a-entity>
