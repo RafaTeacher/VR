@@ -1,0 +1,14 @@
+{
+  "id": "obj01",
+  "title": "Cub de prova",
+  "model": "assets/models/objecte1.glb",
+  "position": [-1, 0, -2],
+  "rotation": [0, 25, 0],
+  "scale": [1, 1, 1],
+
+  "description": "Això és un cub de prova. Serveix per verificar que el model es carrega bé.",
+  "question": "Quin format recomanat fem servir a A-Frame per models 3D?",
+  "answers": ["STL", "GLB/GLTF", "DOCX", "MP3"],
+  "correctIndex": 1,
+  "hint": "Pensa en el format pensat per web i temps real."
+}

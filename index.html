@@ -3,166 +3,332 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>A-Frame Quest - Demo aula</title>
+    <title>A-Frame Quest - Objectes + Quiz en fitxers</title>
+
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
     <script>
-      // Component per fer clic amb el controlador (raycaster) i activar accions
+      // Marca un element com a "clicable" amb el raycaster del controlador
       AFRAME.registerComponent("clickable", {
         init: function () {
           this.el.classList.add("clickable");
         }
       });
 
-      // Mini-quiz: mostra pregunta i comprova resposta. Si és correcte, activa el "portal".
-      AFRAME.registerComponent("quiz-gate", {
-        schema: {
-          correct: { type: "string", default: "A" } // A, B o C
-        },
-        init: function () {
-          const el = this.el;
-          const correct = this.data.correct;
+      window.addEventListener("load", () => {
+        const scene = document.querySelector("a-scene");
+        const assetsEl = document.querySelector("a-assets");
+        const rigEl = document.querySelector("#rig");
 
-          const panel = document.querySelector("#quizPanel");
-          const feedback = document.querySelector("#quizFeedback");
-          const portal = document.querySelector("#portal");
+        const hudEl = document.querySelector("#hud");
+        const panelEl = document.querySelector("#panel");
+        const titleEl = document.querySelector("#panelTitle");
+        const descEl = document.querySelector("#panelDesc");
+        const qEl = document.querySelector("#panelQuestion");
+        const answersEl = document.querySelector("#answers");
+        const feedbackEl = document.querySelector("#feedback");
+        const progressEl = document.querySelector("#progress");
 
-          // Quan cliques l'objecte del quiz, es mostra el panell
-          el.addEventListener("click", () => {
-            panel.setAttribute("visible", true);
-            feedback.setAttribute("value", "");
-          });
+        let objects = [];
+        let currentIndex = 0;
 
-          // Respostes
-          ["A", "B", "C"].forEach(letter => {
-            const btn = document.querySelector("#btn" + letter);
+        function setFeedback(msg) {
+          feedbackEl.setAttribute("value", msg);
+        }
+
+        function setProgress() {
+          progressEl.setAttribute(
+            "value",
+            `Objecte ${Math.min(currentIndex + 1, objects.length)} / ${objects.length}`
+          );
+        }
+
+        function hidePanel() {
+          panelEl.setAttribute("visible", "false");
+          setFeedback("");
+        }
+
+        function showPanelFor(index) {
+          const obj = objects[index];
+          if (!obj) return;
+
+          titleEl.setAttribute("value", obj.title || `Objecte ${index + 1}`);
+          descEl.setAttribute("value", obj.description || "");
+          qEl.setAttribute("value", `PREGUNTA:\n${obj.question || ""}`);
+
+          // Genera botons de respostes dinàmicament
+          answersEl.innerHTML = ""; // esborra botons previs
+          setFeedback("");
+
+          const answers = obj.answers || [];
+          const correctIndex = Number(obj.correctIndex ?? -1);
+
+          // Layout simple 2x2 (fins a 4 respostes)
+          const positions = [
+            { x: -0.6, y: 0.05 },
+            { x:  0.6, y: 0.05 },
+            { x: -0.6, y: -0.35 },
+            { x:  0.6, y: -0.35 }
+          ];
+
+          answers.slice(0, 4).forEach((txt, i) => {
+            const btn = document.createElement("a-entity");
+            btn.setAttribute("clickable", "");
+            btn.classList.add("answer-btn");
+
+            const p = positions[i] || { x: 0, y: -0.35 };
+            btn.setAttribute("position", `${p.x} ${p.y} 0.02`);
+
+            const plane = document.createElement("a-plane");
+            plane.setAttribute("width", "1.05");
+            plane.setAttribute("height", "0.28");
+            plane.setAttribute("color", "#2b2b2b");
+            plane.setAttribute("opacity", "0.95");
+
+            const label = document.createElement("a-text");
+            label.setAttribute("value", txt);
+            label.setAttribute("align", "center");
+            label.setAttribute("width", "2.0");
+            label.setAttribute("color", "#ffffff");
+            label.setAttribute("position", "0 0 0.01");
+
+            btn.appendChild(plane);
+            btn.appendChild(label);
+
             btn.addEventListener("click", () => {
-              if (letter === correct) {
-                feedback.setAttribute("value", "✅ Correcte! Pots avançar.");
-                portal.setAttribute("visible", true);
-                panel.setAttribute("visible", false);
+              // només deixa respondre si és l'objecte actual
+              if (index !== currentIndex) {
+                setFeedback("ℹ️ Aquest no és l’objecte actual. Ves al següent indicat.");
+                return;
+              }
+
+              if (i === correctIndex) {
+                setFeedback("✅ Correcte! Passem al següent…");
+
+                // Marca l'objecte com completat (canvi d'opacitat / color)
+                const ent = document.querySelector(`[data-obj-index="${index}"]`);
+                if (ent) ent.setAttribute("material", "opacity: 0.55; transparent: true");
+
+                // Avança després d'un moment
+                setTimeout(() => {
+                  hidePanel();
+                  currentIndex += 1;
+                  setProgress();
+
+                  if (currentIndex < objects.length) {
+                    // Mou el jugador a prop del següent objecte (teleport suau)
+                    focusOnObject(currentIndex);
+                    showToast(`➡️ Nou objecte: ${objects[currentIndex].title || "Següent"}`);
+                  } else {
+                    showToast("🎉 Has completat tots els objectes!");
+                  }
+                }, 900);
               } else {
-                feedback.setAttribute("value", "❌ No és correcte. Torna-ho a provar.");
+                // Feedback + pista
+                const hint = obj.hint ? ` Pista: ${obj.hint}` : "";
+                setFeedback("❌ Incorrecte. Torna-ho a provar." + hint);
               }
             });
+
+            answersEl.appendChild(btn);
+          });
+
+          panelEl.setAttribute("visible", "true");
+        }
+
+        function showToast(text) {
+          const toast = document.querySelector("#toast");
+          toast.setAttribute("value", text);
+          toast.setAttribute("visible", "true");
+          setTimeout(() => toast.setAttribute("visible", "false"), 1600);
+        }
+
+        function focusOnObject(index) {
+          const obj = objects[index];
+          if (!obj || !obj.position) return;
+
+          // Posa el rig a uns 2.5m davant de l'objecte (aprox.)
+          const x = obj.position[0];
+          const z = obj.position[2];
+
+          // Col·loca el rig en z + 2.5 (si l'objecte és al davant negatiu, queda més a prop)
+          rigEl.setAttribute("position", `${x} 0 ${z + 2.5}`);
+        }
+
+        function addModelAsset(id, src) {
+          const item = document.createElement("a-asset-item");
+          item.setAttribute("id", id);
+          item.setAttribute("src", src);
+          assetsEl.appendChild(item);
+        }
+
+        function addObjectEntity(obj, index) {
+          const e = document.createElement("a-entity");
+          e.setAttribute("gltf-model", `#${obj.assetId}`);
+          e.setAttribute("data-obj-index", String(index));
+          e.setAttribute("clickable", "");
+          e.setAttribute("shadow", "cast: true; receive: false");
+
+          const p = obj.position || [0, 0, -2];
+          const r = obj.rotation || [0, 0, 0];
+          const s = obj.scale || [1, 1, 1];
+
+          e.setAttribute("position", `${p[0]} ${p[1]} ${p[2]}`);
+          e.setAttribute("rotation", `${r[0]} ${r[1]} ${r[2]}`);
+          e.setAttribute("scale", `${s[0]} ${s[1]} ${s[2]}`);
+
+          // Etiqueta flotant (títol) a sobre de l’objecte
+          const label = document.createElement("a-text");
+          label.setAttribute("value", obj.title || `Objecte ${index + 1}`);
+          label.setAttribute("align", "center");
+          label.setAttribute("width", "3.0");
+          label.setAttribute("color", index === 0 ? "#ffd54a" : "#bbbbbb");
+          label.setAttribute("position", `0 1.4 0`);
+          label.setAttribute("side", "double");
+
+          const labelHolder = document.createElement("a-entity");
+          labelHolder.setAttribute("position", "0 0 0");
+          labelHolder.appendChild(label);
+
+          e.appendChild(labelHolder);
+
+          // Clic a l’objecte: mostra el panell, però només deixa “jugar” el currentIndex
+          e.addEventListener("click", () => {
+            showPanelFor(index);
+          });
+
+          scene.appendChild(e);
+        }
+
+        async function loadData() {
+          // 1) Llista de fitxers d'objectes
+          const listResp = await fetch("data/objects.json");
+          if (!listResp.ok) throw new Error("No puc llegir data/objects.json");
+          const fileList = await listResp.json(); // ex: ["obj01.json", "obj02.json"]
+
+          // 2) Carrega cada objecte (fitxer separat)
+          const loaded = [];
+          for (const file of fileList) {
+            const resp = await fetch(`data/${file}`);
+            if (!resp.ok) throw new Error(`No puc llegir data/${file}`);
+            const obj = await resp.json();
+            loaded.push(obj);
+          }
+
+          // 3) Normalitza i assigna assetId a cada model
+          objects = loaded.map((o, i) => ({
+            id: o.id ?? `obj${String(i + 1).padStart(2, "0")}`,
+            title: o.title ?? `Objecte ${i + 1}`,
+            model: o.model, // ruta, ex: "assets/models/objecte1.glb"
+            position: o.position ?? [0, 0, -2 - i * 2.5],
+            rotation: o.rotation ?? [0, 0, 0],
+            scale: o.scale ?? [1, 1, 1],
+            description: o.description ?? "",
+            question: o.question ?? "",
+            answers: o.answers ?? [],
+            correctIndex: o.correctIndex ?? 0,
+            hint: o.hint ?? "",
+            assetId: `asset_${i}`
+          }));
+
+          // 4) Crea assets i entitats a l’escena
+          objects.forEach((obj) => addModelAsset(obj.assetId, obj.model));
+          objects.forEach((obj, i) => addObjectEntity(obj, i));
+
+          // 5) Inicialitza
+          currentIndex = 0;
+          setProgress();
+          focusOnObject(0);
+          showToast("👋 Comença amb el primer objecte (etiqueta groga).");
+          showPanelFor(0);
+
+          // Resalta etiqueta del primer objecte
+          highlightCurrentLabel();
+        }
+
+        function highlightCurrentLabel() {
+          // Posa el títol del currentIndex en groc; els altres en gris
+          objects.forEach((_, i) => {
+            const ent = document.querySelector(`[data-obj-index="${i}"]`);
+            if (!ent) return;
+            const text = ent.querySelector("a-text");
+            if (!text) return;
+            text.setAttribute("color", i === currentIndex ? "#ffd54a" : "#bbbbbb");
           });
         }
+
+        // Quan canviem d'objecte, actualitza colors d’etiquetes
+        const observer = new MutationObserver(() => {
+          highlightCurrentLabel();
+        });
+        observer.observe(progressEl, { attributes: true, attributeFilter: ["value"] });
+
+        // Tanca panell si cliques fons amb un botó (opcional)
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") hidePanel();
+        });
+
+        loadData().catch((err) => {
+          console.error(err);
+          showToast("❌ Error carregant dades. Mira la consola del navegador.");
+        });
       });
     </script>
   </head>
 
   <body>
     <a-scene background="color: #1b1b1b">
-      <!-- Assets (models) -->
-      <a-assets>
-        <!-- Canvia els noms pels teus .glb -->
-        <a-asset-item id="obj1" src="assets/models/objecte1.glb"></a-asset-item>
-        <a-asset-item id="obj2" src="assets/models/objecte2.glb"></a-asset-item>
-      </a-assets>
+      <a-assets></a-assets>
 
-      <!-- Llum -->
-      <a-entity light="type: ambient; intensity: 0.7"></a-entity>
-      <a-entity light="type: directional; intensity: 0.8" position="1 3 2"></a-entity>
+      <!-- Llum + terra -->
+      <a-entity light="type: ambient; intensity: 0.75"></a-entity>
+      <a-entity light="type: directional; intensity: 0.85" position="1 3 2"></a-entity>
+      <a-plane rotation="-90 0 0" width="30" height="30" color="#2a2a2a"></a-plane>
 
-      <!-- Terra -->
-      <a-plane rotation="-90 0 0" width="20" height="20" color="#2a2a2a"></a-plane>
-
-      <!-- Cámara + controls (VR) -->
+      <!-- Rig + càmera -->
       <a-entity id="rig" position="0 0 3">
-        <a-entity camera position="0 1.6 0"></a-entity>
+        <a-entity id="cam" camera position="0 1.6 0">
+          <!-- HUD enganxat a la càmera -->
+          <a-entity id="hud" position="0 0 -1.2">
+            <!-- Toast curt -->
+            <a-text id="toast" value="" position="0 0.85 0" width="2.6" align="center"
+              color="#ffffff" visible="false"></a-text>
 
-        <!-- Controladors (raycaster per apuntar i clicar) -->
+            <!-- Progrés -->
+            <a-text id="progress" value="Objecte 0 / 0" position="0 0.65 0" width="2.6"
+              align="center" color="#cccccc"></a-text>
+
+            <!-- Panell principal -->
+            <a-entity id="panel" visible="false">
+              <a-plane width="2.6" height="1.65" color="#000" opacity="0.85"></a-plane>
+
+              <a-text id="panelTitle" value="" position="0 0.72 0.01" width="2.4"
+                align="center" color="#ffd54a"></a-text>
+
+              <a-text id="panelDesc" value="" position="0 0.42 0.01" width="2.4"
+                align="center" color="#ffffff"></a-text>
+
+              <a-text id="panelQuestion" value="" position="0 0.10 0.01" width="2.4"
+                align="center" color="#ffffff"></a-text>
+
+              <a-entity id="answers" position="0 -0.05 0.01"></a-entity>
+
+              <a-text id="feedback" value="" position="0 -0.72 0.02" width="2.4"
+                align="center" color="#ffffff"></a-text>
+            </a-entity>
+          </a-entity>
+        </a-entity>
+
+        <!-- Controladors -->
         <a-entity
           laser-controls="hand: right"
-          raycaster="objects: .clickable; far: 20"
+          raycaster="objects: .clickable; far: 30"
         ></a-entity>
         <a-entity
           laser-controls="hand: left"
-          raycaster="objects: .clickable; far: 20"
+          raycaster="objects: .clickable; far: 30"
         ></a-entity>
       </a-entity>
-
-      <!-- Objecte 3D #1 + cartell info -->
-      <a-entity gltf-model="#obj1" position="-1 0 -2" rotation="0 30 0" scale="1 1 1"></a-entity>
-      <a-plane position="-1 1.4 -2" width="1.6" height="0.8" color="#111" opacity="0.85"></a-plane>
-      <a-text
-        value="Objecte 1\nInfo: aquí hi poses una descripció curta."
-        position="-1 1.65 -1.99"
-        width="2.2"
-        align="center"
-        color="#fff"
-      ></a-text>
-
-      <!-- Objecte 3D #2: serà el “punt de quiz” -->
-      <a-entity
-        id="quizObject"
-        gltf-model="#obj2"
-        position="1 0 -2"
-        rotation="0 -20 0"
-        scale="1 1 1"
-        clickable
-        quiz-gate="correct: B"
-      ></a-entity>
-
-      <!-- Indicació sobre l'objecte del quiz -->
-      <a-text
-        value="👉 Clica aquest objecte per fer el quiz"
-        position="1 1.4 -2"
-        width="2.5"
-        align="center"
-        color="#ffd54a"
-      ></a-text>
-
-      <!-- Panell del quiz (inicialment amagat) -->
-      <a-entity id="quizPanel" visible="false" position="0 1.6 -1.2">
-        <a-plane width="2.4" height="1.6" color="#000" opacity="0.85"></a-plane>
-
-        <a-text
-          value="PREGUNTA:\nQuina opció és correcta?"
-          position="0 0.55 0.01"
-          width="2.2"
-          align="center"
-          color="#fff"
-        ></a-text>
-
-        <!-- Botons A/B/C -->
-        <a-plane id="btnA" class="clickable" position="-0.7 -0.1 0.01" width="0.6" height="0.35" color="#333"></a-plane>
-        <a-text value="A" position="-0.7 -0.1 0.02" align="center" color="#fff"></a-text>
-
-        <a-plane id="btnB" class="clickable" position="0 -0.1 0.01" width="0.6" height="0.35" color="#333"></a-plane>
-        <a-text value="B" position="0 -0.1 0.02" align="center" color="#fff"></a-text>
-
-        <a-plane id="btnC" class="clickable" position="0.7 -0.1 0.01" width="0.6" height="0.35" color="#333"></a-plane>
-        <a-text value="C" position="0.7 -0.1 0.02" align="center" color="#fff"></a-text>
-
-        <a-text
-          id="quizFeedback"
-          value=""
-          position="0 -0.6 0.02"
-          width="2.2"
-          align="center"
-          color="#fff"
-        ></a-text>
-      </a-entity>
-
-      <!-- “Portal” (bloquejat fins encertar) -->
-      <a-cylinder
-        id="portal"
-        visible="false"
-        position="0 1 -5"
-        radius="0.8"
-        height="2"
-        color="#4caf50"
-        opacity="0.6"
-      ></a-cylinder>
-      <a-text
-        value="PORTAL DESBLOQUEJAT"
-        position="0 2.3 -5"
-        align="center"
-        color="#4caf50"
-        width="4"
-        visible="true"
-      ></a-text>
     </a-scene>
   </body>
 </html>
