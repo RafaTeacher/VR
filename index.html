@@ -22,7 +22,7 @@
         const loadingPanelEl = document.querySelector("#loadingPanel");
         const loadingTextEl = document.querySelector("#loadingText");
 
-        const modelEl = document.querySelector("#modelEntity");
+        const modelRootEl = document.querySelector("#modelRoot");
         const questionEl = document.querySelector("#questionText");
         const progressEl = document.querySelector("#progressText");
         const answersEl = document.querySelector("#answers");
@@ -36,9 +36,9 @@
         const modelWarningEl = document.querySelector("#modelWarningText");
 
         let objects = [];
+        let modelWrappers = [];
         let currentIndex = 0;
         let startTimeMs = 0;
-        let questionStartMs = 0;
         let totalWrong = 0;
         let totalAttempts = 0;
         let locked = false;
@@ -88,6 +88,16 @@
           );
         }
 
+        function setModelWarning(value) {
+          setTroika(modelWarningEl, value, {
+            align: "center",
+            anchor: "center",
+            fontSize: 0.07,
+            maxWidth: 3.9,
+            color: "#ffcc80"
+          });
+        }
+
         function hideHint() {
           hintPanelEl.setAttribute("visible", "false");
           setTroika(hintTextEl, "", {
@@ -134,16 +144,6 @@
               if (!locked) hideFeedback();
             }, duration);
           }
-        }
-
-        function setModelWarning(value) {
-          setTroika(modelWarningEl, value, {
-            align: "center",
-            anchor: "center",
-            fontSize: 0.07,
-            maxWidth: 3.9,
-            color: "#ffcc80"
-          });
         }
 
         function createTextOnButton(btn, text, fontSize = 0.092) {
@@ -196,70 +196,133 @@
           });
         }
 
-        async function preloadModel(url, index, total) {
-          // Precarrega el fitxer perquè després el canvi de pregunta sigui més fluid.
-          // Si el servidor no permet cachejar-lo, el joc igualment continuarà.
-          setLoadingText(`Carregant models 3D...\n${index + 1} / ${total}\n${url}`);
-          try {
-            const response = await fetch(url, { cache: "force-cache" });
-            if (!response.ok) {
-              console.warn("No s'ha pogut precarregar:", url, response.status);
-            } else {
-              await response.arrayBuffer();
-            }
-          } catch (err) {
-            console.warn("Error de precàrrega:", url, err);
-          }
-        }
-
-        async function preloadAllModels() {
-          setLoadingText(`Carregant models 3D...\n0 / ${objects.length}`);
-
-          for (let i = 0; i < objects.length; i++) {
-            await preloadModel(objects[i].model, i, objects.length);
-          }
-
-          setLoadingText("Models preparats.\nComencem!");
-          await new Promise((resolve) => setTimeout(resolve, 650));
-        }
-
-        function fitCurrentModel(obj) {
+        function normalizeModel(wrapper, modelEntity, obj) {
           /*
-            Ajust automàtic:
-            - centra el model perquè no quedi desplaçat fora de pantalla
-            - iguala mides entre models diferents
-            - evita que objecte2.glb / objecte3.glb quedin massa petits, massa grans o fora d'enquadrament
+            Normalitza cada GLB perquè tots tinguin una mida semblant a pantalla.
+            Fem servir un wrapper exterior i desplacem/escaleem el model interior.
           */
-          modelEl.object3D.updateMatrixWorld(true);
+          wrapper.object3D.updateMatrixWorld(true);
+          modelEntity.object3D.updateMatrixWorld(true);
 
-          const box = new THREE.Box3().setFromObject(modelEl.object3D);
+          const box = new THREE.Box3().setFromObject(modelEntity.object3D);
           const size = new THREE.Vector3();
           const center = new THREE.Vector3();
+
           box.getSize(size);
           box.getCenter(center);
 
           const maxDim = Math.max(size.x, size.y, size.z);
 
           if (!isFinite(maxDim) || maxDim <= 0.0001) {
-            setModelWarning("No s'ha pogut calcular la mida del model.");
+            console.warn("No es pot calcular la mida del model:", obj.model);
             return;
           }
 
-          const requestedScale = obj.scale || [1, 1, 1];
-          const userScale = Math.max(requestedScale[0] || 1, requestedScale[1] || 1, requestedScale[2] || 1);
+          // Mida objectiu comuna per a tots els models.
+          // Si vols tots els objectes més grans, puja aquest valor a 2.15 o 2.3.
+          const targetMaxDim = 2.05;
 
-          // Mida objectiu una mica més gran, però dins del camp de visió.
-          const targetMaxDim = 1.65;
-          const uniformScale = (targetMaxDim / maxDim) * userScale;
+          const userScale = obj.scale || [1, 1, 1];
+          const userFactor = Math.max(userScale[0] || 1, userScale[1] || 1, userScale[2] || 1);
 
-          modelEl.object3D.scale.set(uniformScale, uniformScale, uniformScale);
-          modelEl.object3D.position.set(
-            -center.x * uniformScale,
-            -center.y * uniformScale,
-            -center.z * uniformScale
+          const factor = (targetMaxDim / maxDim) * userFactor;
+
+          // Centrem el model en l'origen del wrapper.
+          modelEntity.object3D.position.set(
+            -center.x,
+            -center.y,
+            -center.z
           );
 
-          modelEl.object3D.updateMatrixWorld(true);
+          modelEntity.object3D.scale.set(factor, factor, factor);
+          modelEntity.object3D.updateMatrixWorld(true);
+        }
+
+        function loadOneModel(obj, index, total) {
+          return new Promise((resolve) => {
+            setLoadingText(`Carregant models 3D...\n${index + 1} / ${total}\n${obj.model}`);
+
+            const wrapper = document.createElement("a-entity");
+            wrapper.setAttribute("id", `modelWrapper_${index}`);
+            wrapper.setAttribute("visible", "false");
+            wrapper.setAttribute("position", "0 0 0");
+            wrapper.setAttribute("rotation", (obj.rotation || [0, 0, 0]).join(" "));
+
+            const modelEntity = document.createElement("a-entity");
+            modelEntity.setAttribute("gltf-model", `url(${obj.model})`);
+            modelEntity.setAttribute("visible", "true");
+
+            wrapper.appendChild(modelEntity);
+            modelRootEl.appendChild(wrapper);
+
+            const timeout = setTimeout(() => {
+              console.warn("Timeout carregant model:", obj.model);
+              wrapper.setAttribute("visible", "false");
+              modelWrappers[index] = wrapper;
+              resolve({ ok: false, error: "timeout", wrapper });
+            }, 15000);
+
+            modelEntity.addEventListener("model-loaded", () => {
+              clearTimeout(timeout);
+              normalizeModel(wrapper, modelEntity, obj);
+              modelWrappers[index] = wrapper;
+              resolve({ ok: true, wrapper });
+            });
+
+            modelEntity.addEventListener("model-error", (e) => {
+              clearTimeout(timeout);
+              console.warn("Error carregant model:", obj.model, e);
+              wrapper.setAttribute("visible", "false");
+              modelWrappers[index] = wrapper;
+              resolve({ ok: false, error: "model-error", wrapper });
+            });
+          });
+        }
+
+        async function preloadAllModels() {
+          clearChildren(modelRootEl);
+          modelWrappers = [];
+
+          for (let i = 0; i < objects.length; i++) {
+            await loadOneModel(objects[i], i, objects.length);
+          }
+
+          setLoadingText("Models carregats.\nComencem!");
+          await new Promise((resolve) => setTimeout(resolve, 650));
+        }
+
+        function hideAllModels() {
+          modelWrappers.forEach((w) => {
+            if (w) {
+              w.setAttribute("visible", "false");
+              w.removeAttribute("animation__idle");
+              w.removeAttribute("animation__correct");
+            }
+          });
+        }
+
+        function showCurrentModel(index) {
+          hideAllModels();
+
+          const wrapper = modelWrappers[index];
+          const obj = objects[index];
+
+          if (!wrapper) {
+            setModelWarning(`No s'ha trobat el model ${index + 1}.`);
+            return;
+          }
+
+          wrapper.setAttribute("visible", "true");
+          wrapper.setAttribute("rotation", (obj.rotation || [0, 0, 0]).join(" "));
+          wrapper.removeAttribute("animation__idle");
+          wrapper.removeAttribute("animation__correct");
+
+          // Rotació suau automàtica perquè es vegi de tots els angles sense botons.
+          wrapper.setAttribute(
+            "animation__idle",
+            "property: rotation; dur: 19000; easing: linear; loop: true; to: 0 360 0"
+          );
+
           setModelWarning("");
         }
 
@@ -327,12 +390,15 @@
             hideHint();
             showFeedback("✓ RESPOSTA CORRECTA", "#74ff7a", 0);
 
-            const currentRot = modelEl.getAttribute("rotation");
-            modelEl.removeAttribute("animation__idle");
-            modelEl.setAttribute(
-              "animation__correct",
-              `property: rotation; from: ${currentRot.x} ${currentRot.y} ${currentRot.z}; to: ${currentRot.x} ${currentRot.y + 360} ${currentRot.z}; dur: 1100; easing: easeOutQuad`
-            );
+            const wrapper = modelWrappers[currentIndex];
+            if (wrapper) {
+              const currentRot = wrapper.getAttribute("rotation");
+              wrapper.removeAttribute("animation__idle");
+              wrapper.setAttribute(
+                "animation__correct",
+                `property: rotation; from: ${currentRot.x} ${currentRot.y} ${currentRot.z}; to: ${currentRot.x} ${currentRot.y + 360} ${currentRot.z}; dur: 1100; easing: easeOutQuad`
+              );
+            }
 
             setTimeout(() => {
               currentIndex += 1;
@@ -365,45 +431,7 @@
           const obj = objects[index];
           if (!obj) return;
 
-          setModelWarning("Carregant model...");
-          modelEl.setAttribute("visible", "false");
-          modelEl.removeAttribute("animation__correct");
-          modelEl.removeAttribute("animation__idle");
-          modelEl.removeAttribute("gltf-model");
-
-          // Reiniciem transformacions abans de carregar.
-          modelEl.object3D.position.set(0, 0, 0);
-          modelEl.object3D.scale.set(1, 1, 1);
-          modelEl.object3D.rotation.set(0, 0, 0);
-
-          modelEl.setAttribute("rotation", (obj.rotation || [0, 0, 0]).join(" "));
-
-          // Carrega directament la ruta del JSON.
-          // Això evita problemes si un asset-id no queda ben resolt.
-          modelEl.setAttribute("gltf-model", `url(${obj.model})`);
-
-          const onLoaded = () => {
-            modelEl.removeEventListener("model-loaded", onLoaded);
-            modelEl.removeEventListener("model-error", onError);
-
-            fitCurrentModel(obj);
-            modelEl.setAttribute("visible", "true");
-
-            modelEl.setAttribute(
-              "animation__idle",
-              "property: rotation; dur: 18000; easing: linear; loop: true; to: 0 360 0"
-            );
-          };
-
-          const onError = () => {
-            modelEl.removeEventListener("model-loaded", onLoaded);
-            modelEl.removeEventListener("model-error", onError);
-            modelEl.setAttribute("visible", "false");
-            setModelWarning(`No es pot carregar el model:\n${obj.model}`);
-          };
-
-          modelEl.addEventListener("model-loaded", onLoaded);
-          modelEl.addEventListener("model-error", onError);
+          showCurrentModel(index);
 
           setTroika(
             questionEl,
@@ -420,7 +448,6 @@
 
           createAnswers(obj);
           updateProgress();
-          questionStartMs = Date.now();
         }
 
         async function loadData() {
@@ -492,34 +519,34 @@
       <a-entity light="type: ambient; intensity: 0.9"></a-entity>
       <a-entity light="type: directional; intensity: 1.0" position="0 4 2"></a-entity>
 
-      <!-- Pantalla inicial de precàrrega -->
+      <!-- Pantalla inicial de càrrega -->
       <a-entity id="loadingPanel" position="0 1.45 -3.8" visible="true">
         <a-plane width="4.2" height="1.5" color="#000000" opacity="0.92"></a-plane>
         <a-entity id="loadingText" position="0 0 0.04"></a-entity>
       </a-entity>
 
-      <!-- Escenari principal.
-           Més lluny que abans perquè tot entri millor al camp de visió. -->
+      <!-- Escenari principal -->
       <a-entity id="mainStage" position="0 0 -5.2" visible="false">
 
-        <!-- Objecte més amunt però amb mida automàtica per evitar que quedi fora de pantalla -->
-        <a-entity id="modelArea" position="0 2.55 0">
-          <a-entity id="modelEntity" visible="false" position="0 0 0"></a-entity>
+        <!-- Arrel on es carreguen tots els models ocults.
+             Només se'n mostra un cada vegada. -->
+        <a-entity id="modelArea" position="0 2.58 0">
+          <a-entity id="modelRoot" position="0 0 0"></a-entity>
 
           <a-torus
-            position="0 -0.92 0"
+            position="0 -1.03 0"
             rotation="90 0 0"
-            radius="1.05"
+            radius="1.18"
             radius-tubular="0.010"
             color="#ffd54a"
             opacity="0.85"
             animation__pulse="property: scale; from: 1 1 1; to: 1.05 1.05 1.05; dir: alternate; dur: 850; loop: true; easing: easeInOutSine"
           ></a-torus>
 
-          <a-entity id="modelWarningText" position="0 -1.22 0.03"></a-entity>
+          <a-entity id="modelWarningText" position="0 -1.35 0.03"></a-entity>
         </a-entity>
 
-        <!-- Panell principal més compacte i més amunt -->
+        <!-- Panell principal compacte -->
         <a-entity id="quizPanel" position="0 0.05 0">
           <a-plane width="4.55" height="2.05" color="#000000" opacity="0.90"></a-plane>
 
@@ -529,13 +556,13 @@
           <a-entity id="answers" position="0 -0.38 0.03"></a-entity>
         </a-entity>
 
-        <!-- Pista separada, però més propera als botons -->
+        <!-- Pista separada -->
         <a-entity id="hintPanel" position="0 -1.22 0" visible="false">
           <a-plane width="4.55" height="0.36" color="#3a2200" opacity="0.95"></a-plane>
           <a-entity id="hintText" position="0 0 0.03"></a-entity>
         </a-entity>
 
-        <!-- Feedback situat entre objecte i pregunta -->
+        <!-- Feedback entre objecte i pregunta -->
         <a-entity id="feedbackPanel" position="0 1.47 0.05" visible="false">
           <a-plane width="2.8" height="0.46" color="#000000" opacity="0.84"></a-plane>
           <a-entity id="feedbackText" position="0 0 0.04"></a-entity>
