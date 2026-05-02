@@ -1,0 +1,19 @@
+{
+  "id": "obj03",
+  "title": "Tercer objecte",
+  "model": "assets/models/objecte3.glb",
+  "position": [1, 0, -2],
+  "rotation": [0, -20, 0],
+  "scale": [1, 1, 1],
+
+  "description": "Aquest és el tercer objecte. Quan encertis, s’acabarà la demo.",
+  "question": "Què passa si entres per HTTP en WebXR a Quest?",
+  "answers": [
+    "Funciona igual, només és més lent",
+    "No permet VR/sensors; demana HTTPS",
+    "Només falla el so",
+    "Només falla el text"
+  ],
+  "correctIndex": 1,
+  "hint": "Recorda el missatge que t’ha sortit abans."
+}
