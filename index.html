@@ -19,8 +19,6 @@
         const FONT_URL =
           "https://cdn.jsdelivr.net/npm/@fontsource/inter/files/inter-latin-400-normal.woff";
 
-        const assetsEl = document.querySelector("a-assets");
-
         const loadingPanelEl = document.querySelector("#loadingPanel");
         const loadingTextEl = document.querySelector("#loadingText");
 
@@ -35,6 +33,7 @@
         const finalPanelEl = document.querySelector("#finalPanel");
         const finalTextEl = document.querySelector("#finalText");
         const stageEl = document.querySelector("#mainStage");
+        const modelWarningEl = document.querySelector("#modelWarningText");
 
         let objects = [];
         let currentIndex = 0;
@@ -42,31 +41,25 @@
         let questionStartMs = 0;
         let totalWrong = 0;
         let totalAttempts = 0;
-        let questionTimes = [];
         let locked = false;
 
         function setTroika(el, value, extra = {}) {
-          const base = {
-            value: value,
+          el.setAttribute("troika-text", Object.assign({
+            value,
             color: "#ffffff",
             font: FONT_URL
-          };
-          el.setAttribute("troika-text", Object.assign(base, extra));
+          }, extra));
         }
 
         function setLoadingText(value) {
-          setTroika(
-            loadingTextEl,
-            value,
-            {
-              align: "center",
-              anchor: "center",
-              fontSize: 0.13,
-              maxWidth: 3.8,
-              lineHeight: 1.2,
-              color: "#ffffff"
-            }
-          );
+          setTroika(loadingTextEl, value, {
+            align: "center",
+            anchor: "center",
+            fontSize: 0.12,
+            maxWidth: 3.8,
+            lineHeight: 1.2,
+            color: "#ffffff"
+          });
         }
 
         function clearChildren(el) {
@@ -84,12 +77,12 @@
           const total = objects.length;
           setTroika(
             progressEl,
-            `Pregunta ${Math.min(currentIndex + 1, total)} / ${total}    Errades: ${totalWrong}`,
+            `Pregunta ${Math.min(currentIndex + 1, total)} / ${total} · Errades: ${totalWrong}`,
             {
               align: "center",
               anchor: "center",
-              fontSize: 0.085,
-              maxWidth: 4.0,
+              fontSize: 0.07,
+              maxWidth: 3.8,
               color: "#cfcfcf"
             }
           );
@@ -100,8 +93,8 @@
           setTroika(hintTextEl, "", {
             align: "center",
             anchor: "center",
-            fontSize: 0.085,
-            maxWidth: 4.0
+            fontSize: 0.075,
+            maxWidth: 3.9
           });
         }
 
@@ -109,8 +102,9 @@
           setTroika(hintTextEl, text, {
             align: "center",
             anchor: "center",
-            fontSize: 0.085,
-            maxWidth: 4.0,
+            fontSize: 0.075,
+            maxWidth: 3.95,
+            lineHeight: 1.15,
             color: "#ffefb0"
           });
           hintPanelEl.setAttribute("visible", "true");
@@ -120,31 +114,47 @@
           feedbackPanelEl.setAttribute("visible", "false");
         }
 
-        function showFeedback(text, color = "#74ff7a") {
+        function showFeedback(text, color = "#74ff7a", duration = 1400) {
           setTroika(feedbackTextEl, text, {
             align: "center",
             anchor: "center",
-            fontSize: 0.13,
+            fontSize: 0.105,
             maxWidth: 2.3,
-            color: color
+            color
           });
           feedbackPanelEl.setAttribute("visible", "true");
           feedbackPanelEl.removeAttribute("animation__pop");
           feedbackPanelEl.setAttribute(
             "animation__pop",
-            "property: scale; from: 0.82 0.82 0.82; to: 1 1 1; dur: 250; easing: easeOutBack"
+            "property: scale; from: 0.85 0.85 0.85; to: 1 1 1; dur: 220; easing: easeOutBack"
           );
+
+          if (duration > 0) {
+            setTimeout(() => {
+              if (!locked) hideFeedback();
+            }, duration);
+          }
         }
 
-        function createTextOnButton(btn, text, fontSize = 0.1) {
+        function setModelWarning(value) {
+          setTroika(modelWarningEl, value, {
+            align: "center",
+            anchor: "center",
+            fontSize: 0.07,
+            maxWidth: 3.9,
+            color: "#ffcc80"
+          });
+        }
+
+        function createTextOnButton(btn, text, fontSize = 0.092) {
           const textEl = document.createElement("a-entity");
           textEl.setAttribute("position", "0 0 0.03");
           setTroika(textEl, text, {
             align: "center",
             anchor: "center",
-            fontSize: fontSize,
-            maxWidth: 1.65,
-            lineHeight: 1.1,
+            fontSize,
+            maxWidth: 1.75,
+            lineHeight: 1.08,
             color: "#ffffff"
           });
           btn.appendChild(textEl);
@@ -153,14 +163,14 @@
         function makeAnswerButton(text, index, x, y, color) {
           const btn = document.createElement("a-plane");
           btn.setAttribute("position", `${x} ${y} 0.05`);
-          btn.setAttribute("width", "1.95");
-          btn.setAttribute("height", "0.52");
+          btn.setAttribute("width", "2.00");
+          btn.setAttribute("height", "0.46");
           btn.setAttribute("color", color);
-          btn.setAttribute("opacity", "0.97");
+          btn.setAttribute("opacity", "0.98");
           btn.setAttribute("clickable", "");
           btn.classList.add("answer-button");
 
-          createTextOnButton(btn, `${index + 1}. ${text}`, 0.105);
+          createTextOnButton(btn, `${index + 1}. ${text}`, 0.092);
 
           const handler = () => answer(index);
           btn.addEventListener("click", handler);
@@ -174,10 +184,10 @@
 
           const answers = (obj.answers || []).slice(0, 4);
           const positions = [
-            { x: -1.05, y:  0.30, color: "#c62828" },
-            { x:  1.05, y:  0.30, color: "#1565c0" },
-            { x: -1.05, y: -0.30, color: "#2e7d32" },
-            { x:  1.05, y: -0.30, color: "#ef6c00" }
+            { x: -1.05, y:  0.26, color: "#c62828" },
+            { x:  1.05, y:  0.26, color: "#1565c0" },
+            { x: -1.05, y: -0.26, color: "#2e7d32" },
+            { x:  1.05, y: -0.26, color: "#ef6c00" }
           ];
 
           answers.forEach((txt, i) => {
@@ -186,55 +196,82 @@
           });
         }
 
-        function preloadAsset(id, src, index, total) {
-          return new Promise((resolve) => {
-            const item = document.createElement("a-asset-item");
-            item.setAttribute("id", id);
-            item.setAttribute("src", src);
-
-            let resolved = false;
-
-            const finish = () => {
-              if (resolved) return;
-              resolved = true;
-              setLoadingText(`Carregant models 3D...\n${index + 1} / ${total}`);
-              resolve();
-            };
-
-            item.addEventListener("loaded", finish);
-            item.addEventListener("error", () => {
-              console.warn("No s'ha pogut carregar el model:", src);
-              finish();
-            });
-
-            assetsEl.appendChild(item);
-
-            // Fallback: si algun navegador no dispara l'event loaded però el model ja està a la memòria cau.
-            setTimeout(finish, 8000);
-          });
+        async function preloadModel(url, index, total) {
+          // Precarrega el fitxer perquè després el canvi de pregunta sigui més fluid.
+          // Si el servidor no permet cachejar-lo, el joc igualment continuarà.
+          setLoadingText(`Carregant models 3D...\n${index + 1} / ${total}\n${url}`);
+          try {
+            const response = await fetch(url, { cache: "force-cache" });
+            if (!response.ok) {
+              console.warn("No s'ha pogut precarregar:", url, response.status);
+            } else {
+              await response.arrayBuffer();
+            }
+          } catch (err) {
+            console.warn("Error de precàrrega:", url, err);
+          }
         }
 
         async function preloadAllModels() {
-          setLoadingText("Carregant models 3D...\n0 / " + objects.length);
+          setLoadingText(`Carregant models 3D...\n0 / ${objects.length}`);
 
           for (let i = 0; i < objects.length; i++) {
-            await preloadAsset(objects[i].assetId, objects[i].model, i, objects.length);
+            await preloadModel(objects[i].model, i, objects.length);
           }
 
-          setLoadingText("Models carregats.\nComencem!");
-          await new Promise((resolve) => setTimeout(resolve, 700));
+          setLoadingText("Models preparats.\nComencem!");
+          await new Promise((resolve) => setTimeout(resolve, 650));
+        }
+
+        function fitCurrentModel(obj) {
+          /*
+            Ajust automàtic:
+            - centra el model perquè no quedi desplaçat fora de pantalla
+            - iguala mides entre models diferents
+            - evita que objecte2.glb / objecte3.glb quedin massa petits, massa grans o fora d'enquadrament
+          */
+          modelEl.object3D.updateMatrixWorld(true);
+
+          const box = new THREE.Box3().setFromObject(modelEl.object3D);
+          const size = new THREE.Vector3();
+          const center = new THREE.Vector3();
+          box.getSize(size);
+          box.getCenter(center);
+
+          const maxDim = Math.max(size.x, size.y, size.z);
+
+          if (!isFinite(maxDim) || maxDim <= 0.0001) {
+            setModelWarning("No s'ha pogut calcular la mida del model.");
+            return;
+          }
+
+          const requestedScale = obj.scale || [1, 1, 1];
+          const userScale = Math.max(requestedScale[0] || 1, requestedScale[1] || 1, requestedScale[2] || 1);
+
+          // Mida objectiu una mica més gran, però dins del camp de visió.
+          const targetMaxDim = 1.65;
+          const uniformScale = (targetMaxDim / maxDim) * userScale;
+
+          modelEl.object3D.scale.set(uniformScale, uniformScale, uniformScale);
+          modelEl.object3D.position.set(
+            -center.x * uniformScale,
+            -center.y * uniformScale,
+            -center.z * uniformScale
+          );
+
+          modelEl.object3D.updateMatrixWorld(true);
+          setModelWarning("");
         }
 
         function calculateScore(totalTimeMs) {
           const totalQuestions = objects.length || 1;
-          const correct = totalQuestions;
           const errorPenalty = totalWrong * 10;
           const timePenalty = Math.floor(totalTimeMs / 20000);
           const score = Math.max(0, Math.min(100, 100 - errorPenalty - timePenalty));
 
           return {
             score,
-            correct,
+            correct: totalQuestions,
             totalQuestions,
             errorPenalty,
             timePenalty
@@ -260,17 +297,17 @@
               `Errades: ${totalWrong}`,
               `Intents totals: ${totalAttempts}`,
               "",
-              `Penalització per errades: -${result.errorPenalty}`,
-              `Penalització per temps: -${result.timePenalty}`,
+              `Penalització errades: -${result.errorPenalty}`,
+              `Penalització temps: -${result.timePenalty}`,
               "",
               "Recarrega la pàgina per tornar a començar."
             ].join("\n"),
             {
               align: "center",
               anchor: "center",
-              fontSize: 0.11,
-              maxWidth: 3.9,
-              lineHeight: 1.2,
+              fontSize: 0.105,
+              maxWidth: 3.8,
+              lineHeight: 1.15,
               color: "#ffffff"
             }
           );
@@ -287,15 +324,11 @@
 
           if (selectedIndex === correctIndex) {
             locked = true;
-
-            const elapsedThisQuestion = Date.now() - questionStartMs;
-            questionTimes.push(elapsedThisQuestion);
-
             hideHint();
-            showFeedback("✓ RESPOSTA CORRECTA", "#74ff7a");
+            showFeedback("✓ RESPOSTA CORRECTA", "#74ff7a", 0);
 
-            modelEl.removeAttribute("animation__idle");
             const currentRot = modelEl.getAttribute("rotation");
+            modelEl.removeAttribute("animation__idle");
             modelEl.setAttribute(
               "animation__correct",
               `property: rotation; from: ${currentRot.x} ${currentRot.y} ${currentRot.z}; to: ${currentRot.x} ${currentRot.y + 360} ${currentRot.z}; dur: 1100; easing: easeOutQuad`
@@ -313,17 +346,14 @@
           } else {
             totalWrong += 1;
             updateProgress();
-            showFeedback("✕ RESPOSTA INCORRECTA", "#ffb3b3");
+
+            showFeedback("✕ RESPOSTA INCORRECTA", "#ffb3b3", 1300);
 
             const hint = obj.hint
               ? `Pista: ${obj.hint}`
               : "Pista: observa millor la figura i torna-ho a provar.";
 
             showHint(hint);
-
-            setTimeout(() => {
-              if (!locked) hideFeedback();
-            }, 1300);
           }
         }
 
@@ -335,22 +365,45 @@
           const obj = objects[index];
           if (!obj) return;
 
-          // El model es mostra una mica més gran multiplicant l'escala original.
-          const originalScale = obj.scale || [1, 1, 1];
-          const scaleFactor = 1.25;
-          const finalScale = originalScale.map((v) => v * scaleFactor);
-
-          modelEl.setAttribute("gltf-model", `#${obj.assetId}`);
-          modelEl.setAttribute("scale", finalScale.join(" "));
-          modelEl.setAttribute("rotation", (obj.rotation || [0, 0, 0]).join(" "));
-          modelEl.setAttribute("visible", "true");
-
+          setModelWarning("Carregant model...");
+          modelEl.setAttribute("visible", "false");
           modelEl.removeAttribute("animation__correct");
           modelEl.removeAttribute("animation__idle");
-          modelEl.setAttribute(
-            "animation__idle",
-            "property: rotation; dur: 18000; easing: linear; loop: true; to: 0 360 0"
-          );
+          modelEl.removeAttribute("gltf-model");
+
+          // Reiniciem transformacions abans de carregar.
+          modelEl.object3D.position.set(0, 0, 0);
+          modelEl.object3D.scale.set(1, 1, 1);
+          modelEl.object3D.rotation.set(0, 0, 0);
+
+          modelEl.setAttribute("rotation", (obj.rotation || [0, 0, 0]).join(" "));
+
+          // Carrega directament la ruta del JSON.
+          // Això evita problemes si un asset-id no queda ben resolt.
+          modelEl.setAttribute("gltf-model", `url(${obj.model})`);
+
+          const onLoaded = () => {
+            modelEl.removeEventListener("model-loaded", onLoaded);
+            modelEl.removeEventListener("model-error", onError);
+
+            fitCurrentModel(obj);
+            modelEl.setAttribute("visible", "true");
+
+            modelEl.setAttribute(
+              "animation__idle",
+              "property: rotation; dur: 18000; easing: linear; loop: true; to: 0 360 0"
+            );
+          };
+
+          const onError = () => {
+            modelEl.removeEventListener("model-loaded", onLoaded);
+            modelEl.removeEventListener("model-error", onError);
+            modelEl.setAttribute("visible", "false");
+            setModelWarning(`No es pot carregar el model:\n${obj.model}`);
+          };
+
+          modelEl.addEventListener("model-loaded", onLoaded);
+          modelEl.addEventListener("model-error", onError);
 
           setTroika(
             questionEl,
@@ -358,9 +411,9 @@
             {
               align: "center",
               anchor: "center",
-              fontSize: 0.125,
-              maxWidth: 4.0,
-              lineHeight: 1.15,
+              fontSize: 0.105,
+              maxWidth: 4.05,
+              lineHeight: 1.1,
               color: "#ffffff"
             }
           );
@@ -396,8 +449,7 @@
             question: o.question ?? "",
             answers: o.answers ?? [],
             correctIndex: o.correctIndex ?? 0,
-            hint: o.hint ?? "",
-            assetId: `asset_${i}`
+            hint: o.hint ?? ""
           }));
 
           await preloadAllModels();
@@ -409,7 +461,6 @@
           currentIndex = 0;
           totalWrong = 0;
           totalAttempts = 0;
-          questionTimes = [];
 
           loadQuestion(0);
         }
@@ -424,8 +475,8 @@
             {
               align: "center",
               anchor: "center",
-              fontSize: 0.12,
-              maxWidth: 3.9,
+              fontSize: 0.115,
+              maxWidth: 3.8,
               color: "#ffffff"
             }
           );
@@ -442,55 +493,59 @@
       <a-entity light="type: directional; intensity: 1.0" position="0 4 2"></a-entity>
 
       <!-- Pantalla inicial de precàrrega -->
-      <a-entity id="loadingPanel" position="0 1.45 -3.5" visible="true">
+      <a-entity id="loadingPanel" position="0 1.45 -3.8" visible="true">
         <a-plane width="4.2" height="1.5" color="#000000" opacity="0.92"></a-plane>
         <a-entity id="loadingText" position="0 0 0.04"></a-entity>
       </a-entity>
 
-      <!-- Escenari principal -->
-      <a-entity id="mainStage" position="0 0 -4.1" visible="false">
+      <!-- Escenari principal.
+           Més lluny que abans perquè tot entri millor al camp de visió. -->
+      <a-entity id="mainStage" position="0 0 -5.2" visible="false">
 
-        <!-- Objecte més amunt i més gran -->
-        <a-entity id="modelArea" position="0 2.70 0">
+        <!-- Objecte més amunt però amb mida automàtica per evitar que quedi fora de pantalla -->
+        <a-entity id="modelArea" position="0 2.55 0">
           <a-entity id="modelEntity" visible="false" position="0 0 0"></a-entity>
 
           <a-torus
-            position="0 -0.95 0"
+            position="0 -0.92 0"
             rotation="90 0 0"
-            radius="1.10"
-            radius-tubular="0.012"
+            radius="1.05"
+            radius-tubular="0.010"
             color="#ffd54a"
-            animation__pulse="property: scale; from: 1 1 1; to: 1.08 1.08 1.08; dir: alternate; dur: 800; loop: true; easing: easeInOutSine"
+            opacity="0.85"
+            animation__pulse="property: scale; from: 1 1 1; to: 1.05 1.05 1.05; dir: alternate; dur: 850; loop: true; easing: easeInOutSine"
           ></a-torus>
+
+          <a-entity id="modelWarningText" position="0 -1.22 0.03"></a-entity>
         </a-entity>
 
-        <!-- Panell principal estil Kahoot -->
-        <a-entity id="quizPanel" position="0 -0.45 0">
-          <a-plane width="4.55" height="2.55" color="#000000" opacity="0.90"></a-plane>
+        <!-- Panell principal més compacte i més amunt -->
+        <a-entity id="quizPanel" position="0 0.05 0">
+          <a-plane width="4.55" height="2.05" color="#000000" opacity="0.90"></a-plane>
 
-          <a-entity id="progressText" position="0 1.03 0.03"></a-entity>
-          <a-entity id="questionText" position="0 0.63 0.03"></a-entity>
+          <a-entity id="progressText" position="0 0.84 0.03"></a-entity>
+          <a-entity id="questionText" position="0 0.48 0.03"></a-entity>
 
-          <a-entity id="answers" position="0 -0.25 0.03"></a-entity>
+          <a-entity id="answers" position="0 -0.38 0.03"></a-entity>
         </a-entity>
 
-        <!-- Pista separada -->
-        <a-entity id="hintPanel" position="0 -2.05 0" visible="false">
-          <a-plane width="4.55" height="0.45" color="#3a2200" opacity="0.95"></a-plane>
+        <!-- Pista separada, però més propera als botons -->
+        <a-entity id="hintPanel" position="0 -1.22 0" visible="false">
+          <a-plane width="4.55" height="0.36" color="#3a2200" opacity="0.95"></a-plane>
           <a-entity id="hintText" position="0 0 0.03"></a-entity>
         </a-entity>
 
-        <!-- Missatge de feedback separat -->
-        <a-entity id="feedbackPanel" position="0 2.95 0.05" visible="false">
-          <a-plane width="2.9" height="0.58" color="#000000" opacity="0.82"></a-plane>
+        <!-- Feedback situat entre objecte i pregunta -->
+        <a-entity id="feedbackPanel" position="0 1.47 0.05" visible="false">
+          <a-plane width="2.8" height="0.46" color="#000000" opacity="0.84"></a-plane>
           <a-entity id="feedbackText" position="0 0 0.04"></a-entity>
         </a-entity>
       </a-entity>
 
       <!-- Panell final -->
-      <a-entity id="finalPanel" position="0 1.35 -3.5" visible="false">
-        <a-plane width="4.3" height="2.8" color="#000000" opacity="0.93"></a-plane>
-        <a-entity id="finalText" position="0 0.15 0.04"></a-entity>
+      <a-entity id="finalPanel" position="0 1.35 -4.2" visible="false">
+        <a-plane width="4.25" height="2.55" color="#000000" opacity="0.93"></a-plane>
+        <a-entity id="finalText" position="0 0.10 0.04"></a-entity>
       </a-entity>
 
       <!-- Càmera i controls -->
