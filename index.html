@@ -15,17 +15,6 @@
         }
       });
 
-      // Fa que l'entitat sempre miri a la càmera
-      AFRAME.registerComponent("face-camera", {
-        schema: { camera: { type: "selector" } },
-        tick: function () {
-          const cam = this.data.camera;
-          if (!cam) return;
-          const camPos = cam.object3D.getWorldPosition(new THREE.Vector3());
-          this.el.object3D.lookAt(camPos);
-        }
-      });
-
       window.addEventListener("load", () => {
         const scene = document.querySelector("a-scene");
         const assetsEl = document.querySelector("a-assets");
@@ -48,11 +37,14 @@
         function showToast(text) {
           toastEl.setAttribute("value", text);
           toastEl.setAttribute("visible", "true");
-          setTimeout(() => toastEl.setAttribute("visible", "false"), 1600);
+          setTimeout(() => toastEl.setAttribute("visible", "false"), 1800);
         }
 
         function setProgress() {
-          progressEl.setAttribute("value", `Objecte ${Math.min(currentIndex + 1, objects.length)} / ${objects.length}`);
+          progressEl.setAttribute(
+            "value",
+            `Objecte ${Math.min(currentIndex + 1, objects.length)} / ${objects.length}`
+          );
         }
 
         function setFeedback(msg) {
@@ -60,7 +52,7 @@
         }
 
         function clearAnswers() {
-          // Evita innerHTML (a vegades dona problemes amb A-Frame).
+          // Evita innerHTML: és més estable amb A-Frame i elements creats dinàmicament.
           while (answersEl.firstChild) answersEl.removeChild(answersEl.firstChild);
         }
 
@@ -68,25 +60,49 @@
           const obj = objects[index];
           if (!obj) return;
 
+          // Posició de l'objecte
           const [ox, oy, oz] = obj.position || [0, 0, -2];
+          const desired = new THREE.Vector3(ox, oy + 1.25, oz);
 
-          // El panell queda "a la zona de l'objecte" i una mica per sobre.
-          // Ajusta aquests valors si vols:
-          const px = ox;
-          const py = oy + 1.25;
-          const pz = oz + 1.1;
+          // Posició real de la càmera
+          const camPos = camEl.object3D.getWorldPosition(new THREE.Vector3());
 
-          panelEl.setAttribute("position", `${px} ${py} ${pz}`);
+          // Direcció càmera -> objecte
+          const dir = desired.clone().sub(camPos);
+
+          // Fallback per evitar vectors de longitud 0
+          if (dir.length() < 0.0001) dir.set(0, 0, -1);
+
+          dir.normalize();
+
+          // Distància còmoda del panell davant de la càmera.
+          // Ajusta a 1.8 o 2.2 si el vols més a prop/lluny.
+          const dist = 2.0;
+
+          // Posició final: davant de la càmera, però en direcció a l'objecte.
+          const finalPos = camPos.clone().add(dir.multiplyScalar(dist));
+
+          panelEl.object3D.position.copy(finalPos);
+
+          // Orienta el panell cap a la càmera només quan s'obre.
+          // Això evita que es comporti com un HUD enganxat a la cara.
+          panelEl.object3D.lookAt(camPos);
+
+          // Escala moderada perquè no sigui massa gran en VR.
+          panelEl.setAttribute("scale", "0.75 0.75 0.75");
+
           panelEl.setAttribute("visible", "true");
         }
 
         function focusOnObject(index) {
           const obj = objects[index];
           if (!obj || !obj.position) return;
+
           const x = obj.position[0];
           const z = obj.position[2];
 
-          // Porta el jugador a prop del següent objecte (sense complicar-nos).
+          // Porta el jugador a prop del següent objecte.
+          // Si els objectes estan molt separats, això ajuda a seguir el recorregut.
           rigEl.setAttribute("position", `${x} 0 ${z + 2.6}`);
         }
 
@@ -94,8 +110,10 @@
           objects.forEach((_, i) => {
             const ent = document.querySelector(`[data-obj-index="${i}"]`);
             if (!ent) return;
+
             const text = ent.querySelector(".obj-label");
             if (!text) return;
+
             text.setAttribute("color", i === currentIndex ? "#ffd54a" : "#bbbbbb");
           });
         }
@@ -104,24 +122,23 @@
           const obj = objects[index];
           if (!obj) return;
 
-          // Omple contingut
           titleEl.setAttribute("value", obj.title || `Objecte ${index + 1}`);
           descEl.setAttribute("value", obj.description || "");
           qEl.setAttribute("value", `PREGUNTA:\n${obj.question || ""}`);
+
           setFeedback("");
           clearAnswers();
 
-          // Col·loca el panell prop de l'objecte i que miri a la càmera
+          // Col·loca el panell a una distància còmoda, en direcció a l'objecte.
           placePanelNearObject(index);
 
-          // Genera botons (a-plane clicable per evitar el problema del click al fill)
           const answers = (obj.answers || []).slice(0, 4);
           const correctIndex = Number(obj.correctIndex ?? 0);
 
           // Layout 2x2
           const positions = [
-            { x: -0.33, y: 0.02 },
-            { x:  0.33, y: 0.02 },
+            { x: -0.33, y:  0.02 },
+            { x:  0.33, y:  0.02 },
             { x: -0.33, y: -0.24 },
             { x:  0.33, y: -0.24 }
           ];
@@ -129,13 +146,15 @@
           answers.forEach((txt, i) => {
             const p = positions[i] || { x: 0, y: -0.24 };
 
+            // Cada resposta és directament un a-plane amb geometria i listener propi.
+            // Això facilita que el raycaster/cursor de Quest generi bé el click.
             const btn = document.createElement("a-plane");
             btn.setAttribute("position", `${p.x} ${p.y} 0.02`);
             btn.setAttribute("width", "0.62");
             btn.setAttribute("height", "0.18");
             btn.setAttribute("color", "#2b2b2b");
             btn.setAttribute("opacity", "0.95");
-            btn.setAttribute("clickable", "");  // afegeix classe clickable
+            btn.setAttribute("clickable", "");
             btn.classList.add("answer-btn");
 
             const label = document.createElement("a-text");
@@ -148,7 +167,6 @@
             btn.appendChild(label);
 
             btn.addEventListener("click", () => {
-              // Només es pot "passar" si és l'objecte actual
               if (index !== currentIndex) {
                 setFeedback("ℹ️ Aquest no és l’objecte actual. Completa el que toca (etiqueta groga).");
                 return;
@@ -157,7 +175,7 @@
               if (i === correctIndex) {
                 setFeedback("✅ Correcte! Anem al següent…");
 
-                // Marca visualment com completat (opcional)
+                // Marca visualment com completat.
                 const ent = document.querySelector(`[data-obj-index="${index}"]`);
                 if (ent) ent.setAttribute("material", "opacity: 0.55; transparent: true");
 
@@ -170,7 +188,9 @@
                   if (currentIndex < objects.length) {
                     focusOnObject(currentIndex);
                     showToast(`➡️ Nou objecte: ${objects[currentIndex].title || "Següent"}`);
-                    // Si vols que el panell s'obri automàticament al següent:
+
+                    // Si vols que el panell del següent objecte s'obri automàticament,
+                    // descomenta aquesta línia:
                     // showPanelFor(currentIndex);
                   } else {
                     showToast("🎉 Has completat tots els objectes!");
@@ -215,7 +235,7 @@
           label.setAttribute("align", "center");
           label.setAttribute("width", "3.0");
           label.setAttribute("color", index === 0 ? "#ffd54a" : "#bbbbbb");
-          label.setAttribute("position", `0 1.4 0`);
+          label.setAttribute("position", "0 1.4 0");
           label.setAttribute("side", "double");
 
           e.appendChild(label);
@@ -230,6 +250,7 @@
         async function loadData() {
           const listResp = await fetch("data/objects.json");
           if (!listResp.ok) throw new Error("No puc llegir data/objects.json");
+
           const fileList = await listResp.json();
 
           const loaded = [];
@@ -261,7 +282,11 @@
           setProgress();
           highlightCurrentLabels();
           focusOnObject(0);
+
           showToast("👋 Comença amb el primer objecte (etiqueta groga).");
+
+          // Obrim el primer panell automàticament per facilitar la prova.
+          // Si prefereixes que només s'obri quan cliquen l'objecte, comenta aquesta línia.
           showPanelFor(0);
         }
 
@@ -282,45 +307,89 @@
       <a-entity light="type: directional; intensity: 0.85" position="1 3 2"></a-entity>
       <a-plane rotation="-90 0 0" width="30" height="30" color="#2a2a2a"></a-plane>
 
-      <!-- Panell en l'espai (no a la cara) -->
-      <a-entity id="panel" visible="false" face-camera="camera: #cam">
+      <!-- Panell en l'espai.
+           Ja no porta face-camera continu: només s'orienta cap a la càmera quan s'obre. -->
+      <a-entity id="panel" visible="false">
         <a-plane width="1.2" height="0.75" color="#000" opacity="0.85"></a-plane>
 
-        <a-text id="panelTitle" value="" position="0 0.30 0.01" width="1.1"
-          align="center" color="#ffd54a"></a-text>
+        <a-text
+          id="panelTitle"
+          value=""
+          position="0 0.30 0.01"
+          width="1.1"
+          align="center"
+          color="#ffd54a"
+        ></a-text>
 
-        <a-text id="panelDesc" value="" position="0 0.12 0.01" width="1.1"
-          align="center" color="#ffffff"></a-text>
+        <a-text
+          id="panelDesc"
+          value=""
+          position="0 0.12 0.01"
+          width="1.1"
+          align="center"
+          color="#ffffff"
+        ></a-text>
 
-        <a-text id="panelQuestion" value="" position="0 -0.05 0.01" width="1.1"
-          align="center" color="#ffffff"></a-text>
+        <a-text
+          id="panelQuestion"
+          value=""
+          position="0 -0.05 0.01"
+          width="1.1"
+          align="center"
+          color="#ffffff"
+        ></a-text>
 
         <a-entity id="answers" position="0 -0.17 0.01"></a-entity>
 
-        <a-text id="feedback" value="" position="0 -0.34 0.02" width="1.1"
-          align="center" color="#ffffff"></a-text>
+        <a-text
+          id="feedback"
+          value=""
+          position="0 -0.34 0.02"
+          width="1.1"
+          align="center"
+          color="#ffffff"
+        ></a-text>
       </a-entity>
 
       <!-- Rig + càmera + HUD petit -->
       <a-entity id="rig" position="0 0 3">
         <a-entity id="cam" camera position="0 1.6 0">
           <a-entity id="hud" position="0 0 -1.2">
-            <a-text id="toast" value="" position="0 0.85 0" width="2.6" align="center"
-              color="#ffffff" visible="false"></a-text>
+            <a-text
+              id="toast"
+              value=""
+              position="0 0.85 0"
+              width="2.6"
+              align="center"
+              color="#ffffff"
+              visible="false"
+            ></a-text>
 
-            <a-text id="progress" value="Objecte 0 / 0" position="0 0.65 0" width="2.6"
-              align="center" color="#cccccc"></a-text>
+            <a-text
+              id="progress"
+              value="Objecte 0 / 0"
+              position="0 0.65 0"
+              width="2.6"
+              align="center"
+              color="#cccccc"
+            ></a-text>
           </a-entity>
         </a-entity>
 
-        <!-- Controladors -->
+        <!-- Controladors.
+             El cursor és necessari perquè Quest Browser generi l'event click amb el trigger. -->
         <a-entity
+          id="rightHand"
           laser-controls="hand: right"
           raycaster="objects: .clickable; far: 30"
+          cursor="rayOrigin: entity; fuse: false"
         ></a-entity>
+
         <a-entity
+          id="leftHand"
           laser-controls="hand: left"
           raycaster="objects: .clickable; far: 30"
+          cursor="rayOrigin: entity; fuse: false"
         ></a-entity>
       </a-entity>
     </a-scene>
