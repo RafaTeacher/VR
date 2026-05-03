@@ -39,13 +39,8 @@
           setTroika(restartBtnText, "↺  Tornar a començar", {
             align: "center", anchor: "center", fontSize: 0.105, maxWidth: 2.4, color: "#ffffff"
           });
-          const handler = () => {
-            restartBtnEl.setAttribute("visible", "false");
-            finalPanelEl.setAttribute("visible", "false");
-            loadData();
-          };
-          restartBtnEl.addEventListener("click",   handler);
-          restartBtnEl.addEventListener("mouseup", handler);
+          /* Només 'click', mai 'mouseup' — evita disparaments accidentals del làser */
+          restartBtnEl.addEventListener("click", () => restartGame());
         }, 500);
 
         let objects            = [];
@@ -441,9 +436,28 @@
             }
           );
 
-          /* Botó de tornar a començar */
-          const restartBtn = document.querySelector("#restartBtn");
-          restartBtn.setAttribute("visible", "true");
+          /* Mostrem el botó i afegim la classe clickable en aquest moment */
+          restartBtnEl.setAttribute("visible", "true");
+          restartBtnEl.classList.add("clickable");
+        }
+
+        /* Reinici sense recarregar models — reutilitza els ja carregats */
+        function restartGame() {
+          restartBtnEl.classList.remove("clickable");
+          restartBtnEl.setAttribute("visible", "false");
+          finalPanelEl.setAttribute("visible", "false");
+
+          hideAllModels();
+          stageEl.setAttribute("visible", "true");
+
+          startTimeMs        = Date.now();
+          currentIndex       = 0;
+          totalWrong         = 0;
+          totalAttempts      = 0;
+          totalScore         = 0;
+          wrongsThisQuestion = 0;
+
+          loadQuestion(0);
         }
 
         function answer(selectedIndex) {
@@ -688,8 +702,7 @@
                  width="2.6" height="0.56"
                  color="#1565c0" opacity="0.97"
                  position="0 -1.04 0.04"
-                 visible="false"
-                 clickable>
+                 visible="false">
           <a-entity id="restartBtnText" position="0 0 0.03"></a-entity>
         </a-plane>
       </a-entity>
