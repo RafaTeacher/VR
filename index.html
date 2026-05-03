@@ -31,14 +31,38 @@
         const finalTextEl     = document.querySelector("#finalText");
         const stageEl         = document.querySelector("#mainStage");
         const modelWarningEl  = document.querySelector("#modelWarningText");
+        const restartBtnEl    = document.querySelector("#restartBtn");
+        const restartBtnText  = document.querySelector("#restartBtnText");
 
-        let objects       = [];
-        let modelWrappers = [];
-        let currentIndex  = 0;
-        let startTimeMs   = 0;
-        let totalWrong    = 0;
-        let totalAttempts = 0;
-        let locked        = false;
+        /* Text del botó de reinici */
+        setTimeout(() => {
+          setTroika(restartBtnText, "↺  Tornar a començar", {
+            align: "center", anchor: "center", fontSize: 0.105, maxWidth: 2.4, color: "#ffffff"
+          });
+          const handler = () => {
+            restartBtnEl.setAttribute("visible", "false");
+            finalPanelEl.setAttribute("visible", "false");
+            loadData();
+          };
+          restartBtnEl.addEventListener("click",   handler);
+          restartBtnEl.addEventListener("mouseup", handler);
+        }, 500);
+
+        let objects            = [];
+        let modelWrappers      = [];
+        let currentIndex       = 0;
+        let startTimeMs        = 0;
+        let totalWrong         = 0;
+        let totalAttempts      = 0;
+        let locked             = false;
+
+        /* Puntuació per velocitat (estil Kahoot) */
+        let totalScore         = 0;
+        let questionStartTimeMs = 0;
+        let wrongsThisQuestion  = 0;
+
+        const MAX_PTS_PER_Q   = 1000;  // punts màxims per pregunta
+        const SPEED_LIMIT_MS  = 20000; // finestra de velocitat (20 s)
 
         /* ────────────────────────────────────────────────────────
            Utilitats generals
@@ -79,8 +103,8 @@
         ──────────────────────────────────────────────────────── */
         function updateProgress() {
           setTroika(progressEl,
-            `Pregunta ${Math.min(currentIndex + 1, objects.length)} / ${objects.length}   ·   Errades: ${totalWrong}`,
-            { align: "center", anchor: "center", fontSize: 0.072, maxWidth: 4.5, color: "#a0b4cf" }
+            `Pregunta ${Math.min(currentIndex + 1, objects.length)} / ${objects.length}   ·   Punts: ${totalScore}   ·   Errades: ${totalWrong}`,
+            { align: "center", anchor: "center", fontSize: 0.068, maxWidth: 4.5, color: "#a0b4cf" }
           );
         }
 
@@ -368,18 +392,33 @@
         /* ────────────────────────────────────────────────────────
            Lògica del quiz
         ──────────────────────────────────────────────────────── */
-        function calculateScore(totalTimeMs) {
-          const totalQuestions = objects.length || 1;
-          const errorPenalty   = totalWrong * 10;
-          const timePenalty    = Math.floor(totalTimeMs / 20000);
-          const score          = Math.max(0, Math.min(100, 100 - errorPenalty - timePenalty));
-          return { score, correct: totalQuestions, totalQuestions, errorPenalty, timePenalty };
+        /*
+          Puntuació estil Kahoot per a una pregunta:
+          - Base: MAX_PTS_PER_Q si s'encerta del primer intent
+          - Bonus de velocitat: fins al 50% addicional si es respon
+            en menys de SPEED_LIMIT_MS des que apareix la pregunta
+          - Cada intent fallit previ a la resposta correcta redueix
+            la base un 30% acumulatiu (màxim fins a 0)
+        */
+        function scoreForQuestion(elapsedMs, wrongsBefore) {
+          const speedRatio  = Math.max(0, 1 - elapsedMs / SPEED_LIMIT_MS);
+          const speedBonus  = Math.round(MAX_PTS_PER_Q * 0.5 * speedRatio);
+          const errorFactor = Math.pow(0.70, wrongsBefore);
+          const base        = Math.round(MAX_PTS_PER_Q * errorFactor);
+          return base + speedBonus;
         }
 
         function finishQuiz() {
           locked = true;
-          const totalTimeMs = Date.now() - startTimeMs;
-          const result      = calculateScore(totalTimeMs);
+          const totalTimeMs  = Date.now() - startTimeMs;
+          const maxPossible  = objects.length * MAX_PTS_PER_Q;
+          const pct          = maxPossible > 0 ? Math.round((totalScore / maxPossible) * 100) : 0;
+
+          let rating = "⭐";
+          if (pct >= 90) rating = "🏆 Excel·lent!";
+          else if (pct >= 70) rating = "🥇 Molt bé!";
+          else if (pct >= 50) rating = "🥈 Bé";
+          else rating = "🥉 Segueix practicant";
 
           stageEl.setAttribute("visible", "false");
           finalPanelEl.setAttribute("visible", "true");
@@ -388,23 +427,23 @@
             finalTextEl,
             [
               "ACTIVITAT COMPLETADA",
+              rating,
               "",
-              `Puntuació: ${result.score} / 100`,
+              `Puntuació total: ${totalScore} / ${maxPossible}`,
+              `Percentatge: ${pct}%`,
               `Temps total: ${formatTime(totalTimeMs)}`,
-              `Encerts: ${result.correct} / ${result.totalQuestions}`,
-              `Errades: ${totalWrong}`,
+              `Errades totals: ${totalWrong}`,
               `Intents totals: ${totalAttempts}`,
-              "",
-              `Penalització errades: -${result.errorPenalty}`,
-              `Penalització temps: -${result.timePenalty}`,
-              "",
-              "Recarrega la pàgina per tornar a començar."
             ].join("\n"),
             {
               align: "center", anchor: "center",
-              fontSize: 0.105, maxWidth: 3.8, lineHeight: 1.15, color: "#ffffff"
+              fontSize: 0.105, maxWidth: 3.8, lineHeight: 1.18, color: "#ffffff"
             }
           );
+
+          /* Botó de tornar a començar */
+          const restartBtn = document.querySelector("#restartBtn");
+          restartBtn.setAttribute("visible", "true");
         }
 
         function answer(selectedIndex) {
@@ -419,7 +458,15 @@
           if (selectedIndex === correctIndex) {
             locked = true;
             hideHint();
-            showFeedback("✓ RESPOSTA CORRECTA", "#74ff7a", 0);
+
+            /* Càlcul de punts per a aquesta pregunta */
+            const elapsed = Date.now() - questionStartTimeMs;
+            const pts     = scoreForQuestion(elapsed, wrongsThisQuestion);
+            totalScore   += pts;
+
+            const timeStr = (elapsed / 1000).toFixed(1);
+            showFeedback(`✓ CORRECTE  +${pts} pts\n⏱ ${timeStr}s`, "#74ff7a", 0);
+            updateProgress();
 
             const wrapper = modelWrappers[currentIndex];
             if (wrapper) {
@@ -441,7 +488,8 @@
             }, 2200);
 
           } else {
-            totalWrong += 1;
+            wrongsThisQuestion += 1;
+            totalWrong         += 1;
             updateProgress();
             showFeedback("✕ RESPOSTA INCORRECTA", "#ffb3b3", 1300);
             showHint(
@@ -453,7 +501,9 @@
         }
 
         function loadQuestion(index) {
-          locked = false;
+          locked              = false;
+          wrongsThisQuestion  = 0;
+          questionStartTimeMs = Date.now();
           hideHint();
           hideFeedback();
 
@@ -508,10 +558,12 @@
           loadingPanelEl.setAttribute("visible", "false");
           stageEl.setAttribute("visible", "true");
 
-          startTimeMs   = Date.now();
-          currentIndex  = 0;
-          totalWrong    = 0;
-          totalAttempts = 0;
+          startTimeMs        = Date.now();
+          currentIndex       = 0;
+          totalWrong         = 0;
+          totalAttempts      = 0;
+          totalScore         = 0;
+          wrongsThisQuestion = 0;
 
           loadQuestion(0);
         }
@@ -566,19 +618,6 @@
 
           <!-- Tots els models es carreguen aquí; es mostra un a la vegada -->
           <a-entity id="modelRoot" position="0 0 0"></a-entity>
-
-          <!-- Anell decoratiu (base del model) -->
-          <a-torus
-            position="0 -1.12 0"
-            rotation="90 0 0"
-            radius="1.20"
-            radius-tubular="0.011"
-            color="#2d7be5"
-            opacity="0.80"
-            animation__pulse="property: scale;
-              from: 1 1 1; to: 1.04 1.04 1.04;
-              dir: alternate; dur: 900; loop: true; easing: easeInOutSine"
-          ></a-torus>
 
           <!-- Avís si el model no es pot carregar -->
           <a-entity id="modelWarningText" position="0 -1.55 0.03"></a-entity>
@@ -642,7 +681,17 @@
                  shader="flat"></a-plane>
         <a-plane width="4.35" height="0.06" color="#22c55e" opacity="1"
                  position="0 1.265 0.01" shader="flat"></a-plane>
-        <a-entity id="finalText" position="0 0.12 0.04"></a-entity>
+        <a-entity id="finalText" position="0 0.22 0.04"></a-entity>
+
+        <!-- Botó de tornar a començar -->
+        <a-plane id="restartBtn"
+                 width="2.6" height="0.56"
+                 color="#1565c0" opacity="0.97"
+                 position="0 -1.04 0.04"
+                 visible="false"
+                 clickable>
+          <a-entity id="restartBtnText" position="0 0 0.03"></a-entity>
+        </a-plane>
       </a-entity>
 
       <!-- ════════════════════════════════════════════════════════
