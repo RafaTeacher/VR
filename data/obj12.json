@@ -1,0 +1,15 @@
+{
+  "id": "obj12",
+  "model": "assets/models/objecte12.glb",
+  "rotation": [0, -20, 0],
+  "scale": [1, 1, 1],
+  "question": "Què passa si entres per HTTP en WebXR a Quest?",
+  "answers": [
+    "Opció 1",
+    "Opció 2",
+    "Opció 3",
+    "Opció 4"
+  ],
+  "correctIndex": 3,
+  "hint": "Recorda el missatge que t'ha sortit abans."
+}
