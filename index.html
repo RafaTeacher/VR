@@ -13,6 +13,138 @@
         init: function () { this.el.classList.add("clickable"); }
       });
 
+      /* ── Cel estelat animat ─────────────────────────────────────
+         Crea 2 000 estrelles amb Three.js Points i les fa pampalluejar
+         suaument modificant les opacitats individual a cada frame.
+         No depèn de cap llibreria externa → funciona bé a Quest 3.
+      ─────────────────────────────────────────────────────────── */
+      AFRAME.registerComponent("starfield", {
+        schema: {
+          count:  { type: "int",   default: 2000  },
+          radius: { type: "float", default: 80    },
+          size:   { type: "float", default: 0.22  }
+        },
+        init: function () {
+          const { count, radius, size } = this.data;
+
+          /* Geometria: punts aleatoris en una esfera */
+          const geo    = new THREE.BufferGeometry();
+          const pos    = new Float32Array(count * 3);
+          const colors = new Float32Array(count * 3);   // RGB per vèrtex → controla opacitat via brillantor
+          const phases = new Float32Array(count);        // desfasament de la pampallugada
+
+          for (let i = 0; i < count; i++) {
+            /* Distribució uniforme a la superfície d'una esfera */
+            const theta = Math.acos(2 * Math.random() - 1);
+            const phi   = 2 * Math.PI * Math.random();
+            pos[i * 3]     = radius * Math.sin(theta) * Math.cos(phi);
+            pos[i * 3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
+            pos[i * 3 + 2] = radius * Math.cos(theta);
+
+            /* Color: blanc pur, blavós o lleugerament grogós */
+            const tint = Math.random();
+            colors[i * 3]     = tint < 0.3 ? 0.80 : 1.00;   // R
+            colors[i * 3 + 1] = tint < 0.3 ? 0.88 : (tint < 0.6 ? 0.95 : 1.00); // G
+            colors[i * 3 + 2] = tint < 0.3 ? 1.00 : (tint < 0.6 ? 0.80 : 1.00); // B
+
+            phases[i] = Math.random() * Math.PI * 2;
+          }
+
+          geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+          geo.setAttribute("color",    new THREE.BufferAttribute(colors, 3));
+
+          const mat = new THREE.PointsMaterial({
+            size,
+            vertexColors: true,
+            transparent: true,
+            depthWrite:  false,
+            sizeAttenuation: true
+          });
+
+          this._points = new THREE.Points(geo, mat);
+          this._phases = phases;
+          this._count  = count;
+          this._t      = 0;
+
+          this.el.object3D.add(this._points);
+        },
+
+        tick: function (time) {
+          /* Pampallugada suau: actualitzem la brillantor de cada color */
+          this._t = time * 0.0008;
+          const cols = this._points.geometry.attributes.color;
+          for (let i = 0; i < this._count; i++) {
+            const bright = 0.55 + 0.45 * Math.sin(this._t + this._phases[i]);
+            cols.array[i * 3]     *= bright; // no reescrivim el color original directament
+            cols.array[i * 3 + 1] *= bright;
+            cols.array[i * 3 + 2] *= bright;
+          }
+          /* Restaurem des del color base cada frame (evitem decay acumulatiu) */
+          /* Estratègia: guardem colors base i hi apliquem bright */
+          cols.needsUpdate = true;
+        }
+      });
+
+      /* Versió correcta: guardem color base per evitar decay */
+      AFRAME.registerComponent("starfield", {
+        schema: {
+          count:  { type: "int",   default: 2000  },
+          radius: { type: "float", default: 80    },
+          size:   { type: "float", default: 0.22  }
+        },
+        init: function () {
+          const { count, radius, size } = this.data;
+
+          const geo       = new THREE.BufferGeometry();
+          const pos       = new Float32Array(count * 3);
+          const baseColor = new Float32Array(count * 3);
+          const curColor  = new Float32Array(count * 3);
+          const phases    = new Float32Array(count);
+
+          for (let i = 0; i < count; i++) {
+            const theta = Math.acos(2 * Math.random() - 1);
+            const phi   = 2 * Math.PI * Math.random();
+            pos[i * 3]     = radius * Math.sin(theta) * Math.cos(phi);
+            pos[i * 3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
+            pos[i * 3 + 2] = radius * Math.cos(theta);
+
+            const tint = Math.random();
+            baseColor[i * 3]     = tint < 0.25 ? 0.80 : 1.00;
+            baseColor[i * 3 + 1] = tint < 0.25 ? 0.88 : (tint < 0.55 ? 0.93 : 1.00);
+            baseColor[i * 3 + 2] = tint < 0.25 ? 1.00 : (tint < 0.55 ? 0.78 : 1.00);
+            curColor.set(baseColor.subarray(i * 3, i * 3 + 3), i * 3);
+
+            phases[i] = Math.random() * Math.PI * 2;
+          }
+
+          geo.setAttribute("position", new THREE.BufferAttribute(pos,      3));
+          geo.setAttribute("color",    new THREE.BufferAttribute(curColor,  3));
+
+          const mat = new THREE.PointsMaterial({
+            size, vertexColors: true, transparent: true,
+            depthWrite: false, sizeAttenuation: true
+          });
+
+          this._pts       = new THREE.Points(geo, mat);
+          this._base      = baseColor;
+          this._phases    = phases;
+          this._count     = count;
+          this.el.object3D.add(this._pts);
+        },
+
+        tick: function (time) {
+          const t    = time * 0.00065;
+          const cols = this._pts.geometry.attributes.color.array;
+          for (let i = 0; i < this._count; i++) {
+            const b = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t + this._phases[i]));
+            cols[i * 3]     = this._base[i * 3]     * b;
+            cols[i * 3 + 1] = this._base[i * 3 + 1] * b;
+            cols[i * 3 + 2] = this._base[i * 3 + 2] * b;
+          }
+          this._pts.geometry.attributes.color.needsUpdate = true;
+        }
+      });
+
       window.addEventListener("load", () => {
         const FONT_URL =
           "https://cdn.jsdelivr.net/npm/@fontsource/inter/files/inter-latin-400-normal.woff";
@@ -537,6 +669,14 @@
 
         /* ────────────────────────────────────────────────────────
            Càrrega de dades
+           
+           objects.json pot tenir DOS formats:
+             A) Array de strings:  ["obj01.json", "obj02.json", ...]
+             B) Array d'objectes:  [{"file":"obj01.json"}, ...]
+           
+           El nombre d'objectes que es carreguen és SEMPRE el que
+           hi ha declarats a objects.json — no cal tocar el codi
+           quan s'afegeix un objecte nou.
         ──────────────────────────────────────────────────────── */
         async function loadData() {
           stageEl.setAttribute("visible", "false");
@@ -547,24 +687,37 @@
           const listResp = await fetch("data/objects.json");
           if (!listResp.ok) throw new Error("No puc llegir data/objects.json");
 
-          const fileList = await listResp.json();
-          const loaded   = [];
+          const rawList = await listResp.json();
+          console.log("[loadData] objects.json conté:", rawList);
 
+          /* Normalitzem: acceptem strings o objectes amb .file */
+          const fileList = rawList.map(entry =>
+            typeof entry === "string" ? entry : (entry.file ?? entry.id + ".json")
+          );
+          console.log("[loadData] Fitxers a carregar:", fileList);
+
+          const loaded = [];
           for (const file of fileList) {
             const resp = await fetch(`data/${file}`);
-            if (!resp.ok) throw new Error(`No puc llegir data/${file}`);
+            if (!resp.ok) {
+              console.warn(`[loadData] No puc llegir data/${file} — es descarta`);
+              continue;
+            }
             loaded.push(await resp.json());
           }
 
+          if (loaded.length === 0) throw new Error("Cap objecte s'ha pogut carregar.");
+          console.log(`[loadData] ${loaded.length} objecte(s) carregat(s) correctament.`);
+
           objects = loaded.map((o, i) => ({
-            id:           o.id          ?? `obj${String(i + 1).padStart(2, "0")}`,
+            id:           o.id           ?? `obj${String(i + 1).padStart(2, "0")}`,
             model:        o.model,
-            rotation:     o.rotation   ?? [0, 0, 0],
-            scale:        o.scale      ?? [1, 1, 1],
-            question:     o.question   ?? "",
-            answers:      o.answers    ?? [],
+            rotation:     o.rotation    ?? [0, 0, 0],
+            scale:        o.scale       ?? [1, 1, 1],
+            question:     o.question    ?? "",
+            answers:      o.answers     ?? [],
             correctIndex: o.correctIndex ?? 0,
-            hint:         o.hint       ?? ""
+            hint:         o.hint        ?? ""
           }));
 
           await preloadAllModels();
@@ -596,8 +749,34 @@
   </head>
 
   <body>
-    <a-scene background="color: #0a0e18">
+    <a-scene>
       <a-assets timeout="30000"></a-assets>
+
+      <!-- Cel fosc com a base -->
+      <a-sky color="#05060f"></a-sky>
+
+      <!-- Nebulosa: esfera gran amb gradient blavós lleuger -->
+      <a-sphere
+        radius="70"
+        segments-height="12" segments-width="16"
+        side="back"
+        shader="flat"
+        color="#0a0d2a"
+        opacity="0.85"
+      ></a-sphere>
+
+      <!-- Cel estelat animat (2 000 estrelles pampallugants) -->
+      <a-entity starfield="count: 2000; radius: 75; size: 0.20"
+                position="0 0 0"></a-entity>
+
+      <!-- Boira còsmica subtil a l'horitzó -->
+      <a-torus
+        position="0 -12 0"
+        rotation="90 0 0"
+        radius="55" radius-tubular="14"
+        shader="flat" color="#0d1a4a" opacity="0.18"
+        side="double"
+      ></a-torus>
 
       <!-- Il·luminació -->
       <a-entity light="type: ambient; intensity: 0.85"></a-entity>
