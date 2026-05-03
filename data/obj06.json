@@ -1,6 +1,6 @@
 {
-  "id": "obj04",
-  "model": "assets/models/objecte4.glb",
+  "id": "obj06",
+  "model": "assets/models/objecte6.glb",
   "rotation": [0, -20, 0],
   "scale": [1, 1, 1],
   "question": "Què passa si entres per HTTP en WebXR a Quest?",
