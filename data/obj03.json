@@ -6,7 +6,7 @@
   "rotation": [0, -20, 0],
   "scale": [1, 1, 1],
 
-  "description": "Aquest és el tercer objecte. Quan encertis, s’acabarà la demo.",
+  "description": "Aquest és el tercer objecte.",
   "question": "Què passa si entres per HTTP en WebXR a Quest?",
   "answers": [
     "Funciona igual, només és més lent",
